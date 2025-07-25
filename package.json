@@ -1,9 +1,20 @@
 {
   "name": "resp-proxy",
+  "version": "1.0.0",
+  "description": "A Redis RESP protocol proxy server",
+  "author": "Borislav Ivanov <borislav.ivanov@redis.com> (Redis Inc)",
+  "license": "MIT",
   "scripts": {
+    "clean": "rm -rf node_modules .bun dist build out coverage tmp temp logs *.log",
+    "start": "bun run src/index.ts",
     "proxy": "bun run src/index.ts",
     "dev": "bun run --hot src/index.ts",
-    "test": "bun test **/*.test.ts"
+    "test": "bun test",
+    "test:watch": "bun test --watch",
+    "type-check": "bunx tsc --noEmit",
+    "lint": "bunx @biomejs/biome check src/",
+    "lint:fix": "bunx @biomejs/biome check --apply src/",
+    "format": "bunx @biomejs/biome format --write src/"
   },
   "dependencies": {
     "@hono/zod-validator": "^0.7.2",
@@ -12,7 +23,11 @@
     "zod": "^4.0.8"
   },
   "devDependencies": {
+    "@biomejs/biome": "^2.1.2",
     "@types/bun": "latest",
     "redis": "^5.6.1"
-  }
+  },
+  "trustedDependencies": [
+    "@biomejs/biome"
+  ]
 }
