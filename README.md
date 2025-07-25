@@ -4,6 +4,101 @@
 
 A Redis protocol proxy with HTTP API for response injection.
 
+## Quickstart
+
+Transparently proxy Redis connections while injecting custom RESP responses via REST API.
+
+```
++-------------+    RESP     +-------------+    RESP     +-------------+
+| Client App  |<----------->| RESP Proxy  |<----------->| Redis Server|
++-------------+             +-------------+             +-------------+
+                                   ^
+                                   |
+                              HTTP REST API
+                            (inject responses)
+```
+
+### 30-Second Setup
+
+```bash
+# Start proxy container  ( the rest api will be running port 3000 by default)
+docker run -d \
+  -p 6379:6379 -p 3000:3000 \
+  -e TARGET_HOST=your-redis-host \
+  -e TARGET_PORT=6380 \
+  resp-proxy
+```
+
+### Inject Custom RESP3 Push Notification
+
+RESP3 Push notification: `>4\r\n$6\r\nMOVING\r\n:1\r\n:2\r\n$6\r\nhost:3\r\n`
+
+**cURL Example:**
+```bash
+curl -X POST "http://localhost:3000/send-to-all-clients?encoding=raw" \
+  --data-binary ">4\r\n\$6\r\nMOVING\r\n:1\r\n:2\r\n\$6\r\nhost:3\r\n"
+```
+
+**TypeScript Example:**
+```typescript
+const response = await fetch('http://localhost:3000/send-to-all-clients?encoding=raw', {
+  method: 'POST',
+  body: '>4\r\n$6\r\nMOVING\r\n:1\r\n:2\r\n$6\r\nhost:3\r\n'
+});
+
+const result = await response.text();
+console.log(result.includes('"success":true') ? 'Injected' : 'Failed');
+```
+
+**Go Example:**
+```go
+package main
+
+import (
+    "io"
+    "net/http"
+    "strings"
+)
+
+func main() {
+    payload := strings.NewReader(">4\r\n$6\r\nMOVING\r\n:1\r\n:2\r\n$6\r\nhost:3\r\n")
+    resp, _ := http.Post("http://localhost:3000/send-to-all-clients?encoding=raw", "", payload)
+    defer resp.Body.Close()
+    
+    body, _ := io.ReadAll(resp.Body)
+    if strings.Contains(string(body), `"success":true`) {
+        println("Injected")
+    }
+}
+```
+
+**Java Example:**
+```java
+import java.net.http.*;
+import java.net.URI;
+
+public class RespProxyClient {
+    public static void main(String[] args) throws Exception {
+        var client = HttpClient.newHttpClient();
+        var request = HttpRequest.newBuilder()
+            .uri(URI.create("http://localhost:3000/send-to-all-clients?encoding=raw"))
+            .POST(HttpRequest.BodyPublishers.ofString(
+                ">4\r\n$6\r\nMOVING\r\n:1\r\n:2\r\n$6\r\nhost:3\r\n"))
+            .build();
+
+        var response = client.send(request, HttpResponse.BodyHandlers.ofString());
+
+        if (response.body().contains("\"success\":true")) {
+            System.out.println("Injected");
+        }
+    }
+}
+```
+
+Key Endpoints: `POST /send-to-client/{id}`, `POST /send-to-all-clients`, `GET /connections`, `GET /stats`
+
+---
+
 ## Features
 
 - **Redis Transparent Protocol Proxy**: Forwards Redis connections from clients to target Redis servers
@@ -31,8 +126,6 @@ The easiest way to get started is with Docker :
 docker build -t resp-proxy .
 ```
 
-
-
 ```bash
 # Run with Docker - connects to Redis on host
 docker run -d \
@@ -41,11 +134,11 @@ docker run -d \
   -e TARGET_HOST=host.docker.internal \ #<-- redis server host ( the proxy target )
   -e TARGET_PORT=6380 \ # redis server port
   -e LISTEN_PORT=6379 \ # proxy listen port
-  -e API_PORT = 3000 \ # rest api port 
+  -e API_PORT = 3000 \ # rest api port
   resp-proxy
 ```
 
-### Local Development 
+### Local Development
 
 ```bash
 # Install dependencies
