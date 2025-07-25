@@ -46,8 +46,8 @@ const response = await fetch('http://localhost:3000/send-to-all-clients?encoding
   body: '>4\r\n$6\r\nMOVING\r\n:1\r\n:2\r\n$6\r\nhost:3\r\n'
 });
 
-const result = await response.text();
-console.log(result.includes('"success":true') ? 'Injected' : 'Failed');
+const result = await response.json();
+console.log(result.success ? 'Injected' : 'Failed');
 ```
 
 **Go Example:**
