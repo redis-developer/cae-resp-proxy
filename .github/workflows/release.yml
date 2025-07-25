@@ -67,7 +67,10 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           name: Release ${{ steps.version.outputs.VERSION }}
+          generate_release_notes: true
+          append_body: true
           body: |
+
             ## Docker Image
 
             ```bash
@@ -75,4 +78,3 @@ jobs:
             ```
           draft: true
           prerelease: false
-          generate_release_notes: true
