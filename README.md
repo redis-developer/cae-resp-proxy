@@ -95,6 +95,19 @@ public class RespProxyClient {
 }
 ```
 
+**Python Example:**
+```python
+import json
+import urllib.request
+
+data = b">4\r\n$6\r\nMOVING\r\n:1\r\n:2\r\n$6\r\nhost:3\r\n"
+req = urllib.request.Request("http://localhost:3000/send-to-all-clients?encoding=raw", data)
+
+with urllib.request.urlopen(req) as response:
+    result = json.loads(response.read())
+    print("Injected" if result["success"] else "Failed")
+```
+
 Key Endpoints: `POST /send-to-client/{id}`, `POST /send-to-all-clients`, `GET /connections`, `GET /stats`
 
 ---
