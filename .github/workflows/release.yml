@@ -64,17 +64,19 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          name: Release ${{ steps.version.outputs.VERSION }}
-          generate_release_notes: true
-          append_body: true
-          body: |
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "v${{ steps.version.outputs.VERSION }}" \
+            --repo="$GITHUB_REPOSITORY" \
+            --title="Release ${{ steps.version.outputs.VERSION }}" \
+            --notes-file <(cat <<'EOF'
+          ## Docker Image
 
-            ## Docker Image
-
-            ```bash
-            docker pull ${{ env.DOCKER_REPO }}/${{ env.DOCKER_IMAGE }}:${{ steps.version.outputs.VERSION }}
-            ```
-          draft: true
-          prerelease: false
+          ```bash
+          docker pull ${{ env.DOCKER_REPO }}/${{ env.DOCKER_IMAGE }}:${{ steps.version.outputs.VERSION }}
+          ```
+          EOF
+          ) \
+            --generate-notes \
+            --draft
