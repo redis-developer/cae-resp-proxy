@@ -1,6 +1,8 @@
 # Redis RESP Proxy
 
-[![Test](https://github.com/redis-developer/cae-resp-proxy/actions/workflows/test.yml/badge.svg)](https://github.com/redis-developer/cae-resp-proxy/actions/workflows/test.yml)
+[![Test](https://raster.shields.io/github/actions/workflow/status/redis-developer/cae-resp-proxy/test.yml?branch=master&label=tests)](https://github.com/redis-developer/cae-resp-proxy/actions/workflows/test.yml)
+[![Docker Version](https://raster.shields.io/docker/v/bobymicroby/resp-proxy?label=docker)](https://hub.docker.com/r/bobymicroby/resp-proxy)
+[![Docker Pulls](https://raster.shields.io/docker/pulls/bobymicroby/resp-proxy)](https://hub.docker.com/r/bobymicroby/resp-proxy)
 
 A Redis protocol proxy with HTTP API for response injection.
 
