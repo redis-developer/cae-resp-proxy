@@ -315,16 +315,3 @@ Send custom Redis responses to specific clients for testing scenarios.
 ### Protocol Analysis
 Analyze Redis protocol communication patterns.
 
-## Development
-
-### Running Tests
-
-```bash
-bun test
-```
-
-### Development Mode
-
-```bash
-bun run dev --targetHost=localhost --targetPort=6380
-```
