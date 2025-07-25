@@ -67,16 +67,43 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          # Try to generate notes using GitHub's API first
+          GENERATED_NOTES=$(gh api repos/$GITHUB_REPOSITORY/releases/generate-notes -f tag_name=v${{ steps.version.outputs.VERSION }} --jq .body 2>/dev/null || echo "")
+          
+          # If GitHub's generation worked and has content beyond just "Full Changelog"
+          if [[ "$GENERATED_NOTES" != *"**Full Changelog**"* ]] && [[ -n "$GENERATED_NOTES" ]]; then
+            RELEASE_BODY="## Docker Image
+
+          \`\`\`bash
+          docker pull ${{ env.DOCKER_REPO }}/${{ env.DOCKER_IMAGE }}:${{ steps.version.outputs.VERSION }}
+          \`\`\`
+
+          $GENERATED_NOTES"
+          else
+            # Fallback to commit-based notes
+            PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+            if [[ -n "$PREV_TAG" ]]; then
+              COMMIT_NOTES=$(git log ${PREV_TAG}..HEAD --pretty=format:"* %s (%h)" | head -20)
+              CHANGELOG_LINK="**Full Changelog**: https://github.com/$GITHUB_REPOSITORY/compare/${PREV_TAG}...v${{ steps.version.outputs.VERSION }}"
+            else
+              COMMIT_NOTES=$(git log --pretty=format:"* %s (%h)" | head -20)
+              CHANGELOG_LINK=""
+            fi
+            
+            RELEASE_BODY="## Docker Image
+
+          \`\`\`bash
+          docker pull ${{ env.DOCKER_REPO }}/${{ env.DOCKER_IMAGE }}:${{ steps.version.outputs.VERSION }}
+          \`\`\`
+
+          ## What's Changed
+          $COMMIT_NOTES
+
+          $CHANGELOG_LINK"
+          fi
+          
           gh release create "v${{ steps.version.outputs.VERSION }}" \
             --repo="$GITHUB_REPOSITORY" \
             --title="Release ${{ steps.version.outputs.VERSION }}" \
-            --notes-file <(cat <<'EOF'
-          ## Docker Image
-
-          ```bash
-          docker pull ${{ env.DOCKER_REPO }}/${{ env.DOCKER_IMAGE }}:${{ steps.version.outputs.VERSION }}
-          ```
-          EOF
-          ) \
-            --generate-notes \
+            --notes "$RELEASE_BODY" \
             --draft
