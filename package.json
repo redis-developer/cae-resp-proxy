@@ -15,9 +15,9 @@
     "lint": "bunx @biomejs/biome check src/",
     "lint:fix": "bunx @biomejs/biome check --apply src/",
     "format": "bunx @biomejs/biome format --write src/",
-    "release:patch": "bun version patch && git push origin master --follow-tags",
-    "release:minor": "bun version minor && git push origin master --follow-tags",
-    "release:major": "bun version major && git push origin master --follow-tags"
+    "release:patch": "bun pm version patch && git push origin master --follow-tags",
+    "release:minor": "bun pm version minor && git push origin master --follow-tags",
+    "release:major": "bun pm version major && git push origin master --follow-tags"
   },
   "dependencies": {
     "@hono/zod-validator": "^0.7.2",
