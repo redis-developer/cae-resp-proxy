@@ -1,6 +1,6 @@
 {
   "name": "resp-proxy",
-  "version": "1.0.0",
+  "version": "0.1.0",
   "description": "A Redis RESP protocol proxy server",
   "author": "Borislav Ivanov <borislav.ivanov@redis.com> (Redis Inc)",
   "license": "MIT",
@@ -14,7 +14,10 @@
     "type-check": "bunx tsc --noEmit",
     "lint": "bunx @biomejs/biome check src/",
     "lint:fix": "bunx @biomejs/biome check --apply src/",
-    "format": "bunx @biomejs/biome format --write src/"
+    "format": "bunx @biomejs/biome format --write src/",
+    "release:patch": "bun version patch && git push origin master --follow-tags",
+    "release:minor": "bun version minor && git push origin master --follow-tags",
+    "release:major": "bun version major && git push origin master --follow-tags"
   },
   "dependencies": {
     "@hono/zod-validator": "^0.7.2",
