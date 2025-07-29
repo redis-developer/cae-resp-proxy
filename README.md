@@ -1,8 +1,8 @@
 # Redis RESP Proxy
 
 [![Test](https://github.com/redis-developer/cae-resp-proxy/actions/workflows/test.yml/badge.svg)](https://github.com/redis-developer/cae-resp-proxy/actions/workflows/test.yml)
-[![Docker Version](https://img.shields.io/docker/v/bobymicroby/resp-proxy?label=docker)](https://hub.docker.com/r/bobymicroby/resp-proxy)
-[![Docker Pulls](https://img.shields.io/docker/pulls/bobymicroby/resp-proxy)](https://hub.docker.com/r/bobymicroby/resp-proxy)
+[![Docker Version](https://img.shields.io/docker/v/redislabs/client-resp-proxy?label=docker)](https://hub.docker.com/r/redislabs/client-resp-proxy)
+[![Docker Pulls](https://img.shields.io/docker/pulls/redislabs/client-resp-proxy)](https://hub.docker.com/r/redislabs/client-resp-proxy)
 
 A Redis protocol proxy with HTTP API for response injection.
 
@@ -28,7 +28,7 @@ docker run -d \
   -p 6379:6379 -p 3000:3000 \
   -e TARGET_HOST=your-redis-host \
   -e TARGET_PORT=6380 \
-  resp-proxy
+  redislabs/client-resp-proxy
 ```
 
 ### Inject Custom RESP3 Push Notification
@@ -132,9 +132,7 @@ Key Endpoints: `POST /send-to-client/{id}`, `POST /send-to-all-clients`, `GET /c
 ### Basic Usage
 
 #### Docker (Recommended)
-
-The easiest way to get started is with Docker :
-
+Use the official docker [image](https://hub.docker.com/r/redislabs/client-resp-proxy) or
 
 ```bash
 # Build the docker image first
