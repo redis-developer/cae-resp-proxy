@@ -6,8 +6,8 @@ on:
       - "v*"
 
 env:
-  DOCKER_REPO: bobymicroby
-  DOCKER_IMAGE: resp-proxy
+  DOCKER_REPO: redislabs
+  DOCKER_IMAGE: client-resp-proxy
 
 jobs:
   release:
