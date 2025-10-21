@@ -8,7 +8,7 @@ import type {
 	SendResult,
 } from "redis-monorepo/packages/test-utils/lib/redis-proxy.ts";
 import { RedisProxy } from "redis-monorepo/packages/test-utils/lib/redis-proxy.ts";
-
+import ProxyStore, { makeId } from "./proxy-store.ts";
 import {
 	connectionIdsQuerySchema,
 	encodingSchema,
@@ -17,7 +17,6 @@ import {
 	parseBuffer,
 	proxyConfigSchema,
 } from "./util.ts";
-import ProxyStore, { makeId } from "./proxy-store.ts";
 
 const startNewProxy = (config: ProxyConfig) => {
 	const proxy = new RedisProxy(config);
@@ -190,5 +189,5 @@ export function createApp(testConfig?: ProxyConfig & { readonly apiPort?: number
 		return c.json({ success, connectionId });
 	});
 
-	return { app, proxy: proxyStore.proxies[0]!, config };
+	return { app, proxy: proxyStore.proxies[0], config };
 }
