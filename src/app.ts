@@ -1,7 +1,12 @@
 import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
 import { logger } from "hono/logger";
-import type { Interceptor, ProxyConfig, ProxyStats, SendResult } from "redis-monorepo/packages/test-utils/lib/redis-proxy.ts";
+import type {
+	Interceptor,
+	ProxyConfig,
+	ProxyStats,
+	SendResult,
+} from "redis-monorepo/packages/test-utils/lib/redis-proxy.ts";
 import { RedisProxy } from "redis-monorepo/packages/test-utils/lib/redis-proxy.ts";
 
 import {
@@ -10,115 +15,118 @@ import {
 	getConfig,
 	paramSchema,
 	parseBuffer,
-  proxyConfigSchema,
+	proxyConfigSchema,
 } from "./util.ts";
 import ProxyStore, { makeId } from "./proxy-store.ts";
 
 const startNewProxy = (config: ProxyConfig) => {
-  const proxy = new RedisProxy(config);
-  proxy.start().catch(console.error);
-  return proxy;
-}
+	const proxy = new RedisProxy(config);
+	proxy.start().catch(console.error);
+	return proxy;
+};
 
 interface Mapping {
-  from: {
-    host: string,
-    port: number
-  },
-  to: {
-    host: string,
-    port: number
-  }
+	from: {
+		host: string;
+		port: number;
+	};
+	to: {
+		host: string;
+		port: number;
+	};
 }
 
 const addressMapping = new Map<string, Mapping>();
 
 const setTransformers = (addressMapping: Map<string, Mapping>, proxyStore: ProxyStore) => {
-  const interceptors = [];
-  for(const mapping of addressMapping.values()) {
-    interceptors.push(async (data: Buffer, next: Interceptor) => {
-      const response = await next(data);
-      // for example $9\r\n127.0.0.1\r\n:3000
-      const from = `$${mapping.from.host.length}\r\n${mapping.from.host}\r\n:${mapping.from.port}`;
-      if(response.includes(from)) {
-        const to = `$${mapping.to.host.length}\r\n${mapping.to.host}\r\n:${mapping.to.port}`;
-        return Buffer.from(response.toString().replaceAll(from, to));
-      }
-      return response;
-    });
-  }
-  for(const proxy of proxyStore.proxies) {
-    proxy.setInterceptors(interceptors);
-  }
-}
-
+	const interceptors = [];
+	for (const mapping of addressMapping.values()) {
+		interceptors.push(async (data: Buffer, next: Interceptor) => {
+			const response = await next(data);
+			// for example $9\r\n127.0.0.1\r\n:3000
+			const from = `$${mapping.from.host.length}\r\n${mapping.from.host}\r\n:${mapping.from.port}`;
+			if (response.includes(from)) {
+				const to = `$${mapping.to.host.length}\r\n${mapping.to.host}\r\n:${mapping.to.port}`;
+				return Buffer.from(response.toString().replaceAll(from, to));
+			}
+			return response;
+		});
+	}
+	for (const proxy of proxyStore.proxies) {
+		proxy.setInterceptors(interceptors);
+	}
+};
 
 export function createApp(testConfig?: ProxyConfig & { readonly apiPort?: number }) {
 	const config = testConfig || getConfig();
 	const app = new Hono();
 	app.use(logger());
 
-  const proxyStore = new ProxyStore();
-  const nodeId = makeId(config.targetHost, config.targetPort)
-  proxyStore.add(nodeId, startNewProxy(config));
-  addressMapping.set(nodeId, {
-    from: {
-      host: config.targetHost,
-      port: config.targetPort
-    },
-    to: {
-      host: config.listenHost ?? '127.0.0.1',
-      port: config.listenPort
-    }
-  });
-  setTransformers(addressMapping, proxyStore);
+	const proxyStore = new ProxyStore();
+	const nodeId = makeId(config.targetHost, config.targetPort);
+	proxyStore.add(nodeId, startNewProxy(config));
+	addressMapping.set(nodeId, {
+		from: {
+			host: config.targetHost,
+			port: config.targetPort,
+		},
+		to: {
+			host: config.listenHost ?? "127.0.0.1",
+			port: config.listenPort,
+		},
+	});
+	setTransformers(addressMapping, proxyStore);
 
-  app.post("/nodes",
-    zValidator("json", proxyConfigSchema),
-    async (c) => {
-      const data = await c.req.json();
-      const cfg: ProxyConfig = { ...config, ...data };
-      const nodeId = makeId(cfg.targetHost, cfg.targetPort);
-      proxyStore.add(nodeId, startNewProxy(cfg));
-      addressMapping.set(nodeId, {
-        from: {
-          host: cfg.targetHost,
-          port: cfg.targetPort
-        },
-        to: {
-          host: cfg.listenHost ?? '127.0.0.1',
-          port: cfg.listenPort
-        }
-      });
-      setTransformers(addressMapping, proxyStore);
-      return c.json({ success: true, cfg });
-  });
+	app.post("/nodes", zValidator("json", proxyConfigSchema), async (c) => {
+		const data = await c.req.json();
+		const cfg: ProxyConfig = { ...config, ...data };
+		const nodeId = makeId(cfg.targetHost, cfg.targetPort);
+		proxyStore.add(nodeId, startNewProxy(cfg));
+		addressMapping.set(nodeId, {
+			from: {
+				host: cfg.targetHost,
+				port: cfg.targetPort,
+			},
+			to: {
+				host: cfg.listenHost ?? "127.0.0.1",
+				port: cfg.listenPort,
+			},
+		});
+		setTransformers(addressMapping, proxyStore);
+		return c.json({ success: true, cfg });
+	});
 
-  app.delete("/nodes/:id", async (c) => {
-    const nodeId = c.req.param("id");
-    const success = await proxyStore.delete(nodeId);
-    addressMapping.delete(nodeId);
-    setTransformers(addressMapping, proxyStore);
-    return c.json({ success });
-  });
+	app.delete("/nodes/:id", async (c) => {
+		const nodeId = c.req.param("id");
+		const success = await proxyStore.delete(nodeId);
+		addressMapping.delete(nodeId);
+		setTransformers(addressMapping, proxyStore);
+		return c.json({ success });
+	});
 
-  app.get("/nodes", (c) => {
-    return c.json({ ids: proxyStore.nodeIds });
-  });
+	app.get("/nodes", (c) => {
+		return c.json({ ids: proxyStore.nodeIds });
+	});
 
 	app.get("/stats", (c) => {
-    const response = proxyStore.entries.reduce((acc, [id, proxy]) => {
-      acc[id] = proxy.getStats();
-      return acc;
-    }, {} as Record<string, ProxyStats>);
+		const response = proxyStore.entries.reduce(
+			(acc, [id, proxy]) => {
+				acc[id] = proxy.getStats();
+				return acc;
+			},
+			{} as Record<string, ProxyStats>,
+		);
 		return c.json(response);
 	});
 
 	app.get("/connections", (c) => {
-  	const response = proxyStore.entries.reduce((acc, [id, proxy]) => {
-      acc[id] = proxy.getActiveConnectionIds();
-      return acc;
-    }, {} as Record<string, readonly string[]>)
+		const response = proxyStore.entries.reduce(
+			(acc, [id, proxy]) => {
+				acc[id] = proxy.getActiveConnectionIds();
+				return acc;
+			},
+			{} as Record<string, readonly string[]>,
+		);
 		return c.json(response);
 	});
 
@@ -133,12 +141,13 @@ export function createApp(testConfig?: ProxyConfig & { readonly apiPort?: number
 
 			const buffer = parseBuffer(data, encoding);
 
-      const proxy = proxyStore.getProxyByConnectionId(connectionId);
-      if (!proxy) return c.json({
-        success: false,
-        error: 'Connection not found',
-        connectionId
-      });
+			const proxy = proxyStore.getProxyByConnectionId(connectionId);
+			if (!proxy)
+				return c.json({
+					success: false,
+					error: "Connection not found",
+					connectionId,
+				});
 
 			const result = proxy.sendToClient(connectionId, buffer);
 			return c.json(result);
@@ -151,10 +160,10 @@ export function createApp(testConfig?: ProxyConfig & { readonly apiPort?: number
 
 		const buffer = parseBuffer(data, encoding);
 
-    const results: SendResult[] = [];
-    for(const [proxy, matchingConIds] of proxyStore.getProxiesByConnectionIds(connectionIds)) {
-  		results.push(...proxy.sendToClients(matchingConIds, buffer));
-    }
+		const results: SendResult[] = [];
+		for (const [proxy, matchingConIds] of proxyStore.getProxiesByConnectionIds(connectionIds)) {
+			results.push(...proxy.sendToClients(matchingConIds, buffer));
+		}
 		return c.json({ results });
 	});
 
@@ -162,20 +171,21 @@ export function createApp(testConfig?: ProxyConfig & { readonly apiPort?: number
 		const { encoding } = c.req.valid("query");
 		const data = await c.req.text();
 		const buffer = parseBuffer(data, encoding);
-    const results: SendResult[] = [];
-    for(const proxy of proxyStore.proxies) {
-      results.push(...proxy.sendToAllClients(buffer));
-    }
+		const results: SendResult[] = [];
+		for (const proxy of proxyStore.proxies) {
+			results.push(...proxy.sendToAllClients(buffer));
+		}
 		return c.json({ results });
 	});
 
-  app.delete("/connections/:id", (c) => {
-    const connectionId = c.req.param("id");
-    const proxy = proxyStore.getProxyByConnectionId(connectionId);
-    if (!proxy) return c.json({
-      success: false,
-      connectionId
-    });
+	app.delete("/connections/:id", (c) => {
+		const connectionId = c.req.param("id");
+		const proxy = proxyStore.getProxyByConnectionId(connectionId);
+		if (!proxy)
+			return c.json({
+				success: false,
+				connectionId,
+			});
 		const success = proxy.closeConnection(connectionId);
 		return c.json({ success, connectionId });
 	});

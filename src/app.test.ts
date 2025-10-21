@@ -9,7 +9,7 @@ import {
 import { createApp } from "./app";
 import { makeId } from "./proxy-store";
 
-const TARGET_HOST = "127.0.0.1"
+const TARGET_HOST = "127.0.0.1";
 
 describe("Redis Proxy API", () => {
 	let app: any;
@@ -130,7 +130,7 @@ describe("Redis Proxy API", () => {
 		expect(res.status).toBe(200);
 
 		const result = (await res.json())[makeId(TARGET_HOST, targetPort)];
-    expect(result).toBeArray();
+		expect(result).toBeArray();
 		expect(result.length).toBe(0);
 	});
 
