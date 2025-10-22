@@ -1,13 +1,15 @@
 import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
 import { logger } from "hono/logger";
-import type {
-	Interceptor,
-	ProxyConfig,
-	ProxyStats,
-	SendResult,
-} from "redis-monorepo/packages/test-utils/lib/redis-proxy.ts";
-import { RedisProxy } from "redis-monorepo/packages/test-utils/lib/redis-proxy.ts";
+import {
+  RedisProxy,
+	type InterceptorDescription,
+	type InterceptorState,
+	type Next,
+	type ProxyConfig,
+	type ProxyStats,
+	type SendResult,
+} from "redis-monorepo/packages/test-utils/lib/proxy/redis-proxy.ts";
 import ProxyStore, { makeId } from "./proxy-store.ts";
 import {
 	connectionIdsQuerySchema,
@@ -37,22 +39,27 @@ interface Mapping {
 
 const addressMapping = new Map<string, Mapping>();
 
-const setTransformers = (addressMapping: Map<string, Mapping>, proxyStore: ProxyStore) => {
-	const interceptors = [];
+const setClusterOverwriteInterceptors = (addressMapping: Map<string, Mapping>, proxyStore: ProxyStore) => {
+	const interceptors: InterceptorDescription[] = [];
 	for (const mapping of addressMapping.values()) {
-		interceptors.push(async (data: Buffer, next: Interceptor) => {
-			const response = await next(data);
-			// for example $9\r\n127.0.0.1\r\n:3000
-			const from = `$${mapping.from.host.length}\r\n${mapping.from.host}\r\n:${mapping.from.port}`;
-			if (response.includes(from)) {
-				const to = `$${mapping.to.host.length}\r\n${mapping.to.host}\r\n:${mapping.to.port}`;
-				return Buffer.from(response.toString().replaceAll(from, to));
+		interceptors.push({
+      name: `ip-replacer-${mapping.to.port}`,
+  		fn: async (data: Buffer, next: Next, state: InterceptorState) => {
+        state.invokeCount++;
+				const response = await next(data);
+				// for example $9\r\n127.0.0.1\r\n:3000
+				const from = `$${mapping.from.host.length}\r\n${mapping.from.host}\r\n:${mapping.from.port}`;
+				if (response.includes(from)) {
+          state.matchCount++;
+					const to = `$${mapping.to.host.length}\r\n${mapping.to.host}\r\n:${mapping.to.port}`;
+					return Buffer.from(response.toString().replaceAll(from, to));
+				}
+				return response;
 			}
-			return response;
 		});
-	}
+  }
 	for (const proxy of proxyStore.proxies) {
-		proxy.setInterceptors(interceptors);
+		proxy.setGlobalInterceptors(interceptors);
 	}
 };
 
@@ -74,7 +81,7 @@ export function createApp(testConfig?: ProxyConfig & { readonly apiPort?: number
 			port: config.listenPort,
 		},
 	});
-	setTransformers(addressMapping, proxyStore);
+	setClusterOverwriteInterceptors(addressMapping, proxyStore);
 
 	app.post("/nodes", zValidator("json", proxyConfigSchema), async (c) => {
 		const data = await c.req.json();
@@ -91,7 +98,7 @@ export function createApp(testConfig?: ProxyConfig & { readonly apiPort?: number
 				port: cfg.listenPort,
 			},
 		});
-		setTransformers(addressMapping, proxyStore);
+		setClusterOverwriteInterceptors(addressMapping, proxyStore);
 		return c.json({ success: true, cfg });
 	});
 
@@ -99,7 +106,7 @@ export function createApp(testConfig?: ProxyConfig & { readonly apiPort?: number
 		const nodeId = c.req.param("id");
 		const success = await proxyStore.delete(nodeId);
 		addressMapping.delete(nodeId);
-		setTransformers(addressMapping, proxyStore);
+		setClusterOverwriteInterceptors(addressMapping, proxyStore);
 		return c.json({ success });
 	});
 
