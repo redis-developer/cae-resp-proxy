@@ -2,7 +2,7 @@ import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
 import { logger } from "hono/logger";
 import {
-  RedisProxy,
+	RedisProxy,
 	type InterceptorDescription,
 	type InterceptorState,
 	type Next,
@@ -18,6 +18,7 @@ import {
 	paramSchema,
 	parseBuffer,
 	proxyConfigSchema,
+	scenarioSchema,
 } from "./util.ts";
 
 const startNewProxy = (config: ProxyConfig) => {
@@ -39,25 +40,28 @@ interface Mapping {
 
 const addressMapping = new Map<string, Mapping>();
 
-const setClusterOverwriteInterceptors = (addressMapping: Map<string, Mapping>, proxyStore: ProxyStore) => {
+const setClusterOverwriteInterceptors = (
+	addressMapping: Map<string, Mapping>,
+	proxyStore: ProxyStore,
+) => {
 	const interceptors: InterceptorDescription[] = [];
 	for (const mapping of addressMapping.values()) {
 		interceptors.push({
-      name: `ip-replacer-${mapping.to.port}`,
-  		fn: async (data: Buffer, next: Next, state: InterceptorState) => {
-        state.invokeCount++;
+			name: `ip-replacer-${mapping.to.port}`,
+			fn: async (data: Buffer, next: Next, state: InterceptorState) => {
+				state.invokeCount++;
 				const response = await next(data);
 				// for example $9\r\n127.0.0.1\r\n:3000
 				const from = `$${mapping.from.host.length}\r\n${mapping.from.host}\r\n:${mapping.from.port}`;
 				if (response.includes(from)) {
-          state.matchCount++;
+					state.matchCount++;
 					const to = `$${mapping.to.host.length}\r\n${mapping.to.host}\r\n:${mapping.to.port}`;
 					return Buffer.from(response.toString().replaceAll(from, to));
 				}
 				return response;
-			}
+			},
 		});
-  }
+	}
 	for (const proxy of proxyStore.proxies) {
 		proxy.setGlobalInterceptors(interceptors);
 	}
@@ -194,6 +198,33 @@ export function createApp(testConfig?: ProxyConfig & { readonly apiPort?: number
 			});
 		const success = proxy.closeConnection(connectionId);
 		return c.json({ success, connectionId });
+	});
+
+	app.post("/scenarios", zValidator("json", scenarioSchema), async (c) => {
+		const { responses, encoding } = c.req.valid("json");
+
+		const responsesBuffers = responses.map((response) => parseBuffer(response, encoding));
+		let currentIndex = 0;
+
+		const scenarioInterceptor: InterceptorDescription = {
+			name: "scenario-interceptor",
+			fn: async (data: Buffer, next: Next, state: InterceptorState): Promise<Buffer> => {
+				state.invokeCount++;
+				if (currentIndex < responsesBuffers.length) {
+					state.matchCount++;
+					const response = responsesBuffers[currentIndex]!;
+					currentIndex++;
+					return response;
+				}
+				return await next(data);
+			},
+		};
+
+		for (const proxy of proxyStore.proxies) {
+			proxy.setGlobalInterceptors([scenarioInterceptor]);
+		}
+
+		return c.json({ success: true, totalResponses: responses.length });
 	});
 
 	return { app, proxy: proxyStore.proxies[0], config };

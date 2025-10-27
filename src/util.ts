@@ -17,6 +17,11 @@ export const connectionIdsQuerySchema = z.object({
 	encoding: z.enum(["base64", "raw"]).default("base64"),
 });
 
+export const scenarioSchema = z.object({
+	responses: z.array(z.string()).min(1, "At least one response is required"),
+	encoding: z.enum(["base64", "raw"]).default("base64"),
+});
+
 export function parseBuffer(data: string, encoding: "base64" | "raw"): Buffer {
 	switch (encoding) {
 		case "base64":

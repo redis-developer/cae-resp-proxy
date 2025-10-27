@@ -5,7 +5,7 @@ import { createClient } from "redis";
 import {
 	getFreePortNumber,
 	type RedisProxy,
-} from "redis-monorepo/packages/test-utils/lib/redis-proxy.ts";
+} from "redis-monorepo/packages/test-utils/lib/proxy/redis-proxy.ts";
 import { createApp } from "./app";
 import { makeId } from "./proxy-store";
 
