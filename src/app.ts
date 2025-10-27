@@ -2,12 +2,12 @@ import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
 import { logger } from "hono/logger";
 import {
-	RedisProxy,
 	type InterceptorDescription,
 	type InterceptorState,
 	type Next,
 	type ProxyConfig,
 	type ProxyStats,
+	RedisProxy,
 	type SendResult,
 } from "redis-monorepo/packages/test-utils/lib/proxy/redis-proxy.ts";
 import ProxyStore, { makeId } from "./proxy-store.ts";
@@ -15,6 +15,7 @@ import {
 	connectionIdsQuerySchema,
 	encodingSchema,
 	getConfig,
+	interceptorSchema,
 	paramSchema,
 	parseBuffer,
 	proxyConfigSchema,
@@ -212,7 +213,7 @@ export function createApp(testConfig?: ProxyConfig & { readonly apiPort?: number
 				state.invokeCount++;
 				if (currentIndex < responsesBuffers.length) {
 					state.matchCount++;
-					const response = responsesBuffers[currentIndex]!;
+					const response = responsesBuffers[currentIndex] as Buffer;
 					currentIndex++;
 					return response;
 				}
@@ -221,10 +222,35 @@ export function createApp(testConfig?: ProxyConfig & { readonly apiPort?: number
 		};
 
 		for (const proxy of proxyStore.proxies) {
-			proxy.setGlobalInterceptors([scenarioInterceptor]);
+			proxy.addGlobalInterceptor(scenarioInterceptor);
 		}
 
 		return c.json({ success: true, totalResponses: responses.length });
+	});
+
+	app.post("/interceptors", zValidator("json", interceptorSchema), async (c) => {
+		const { name, match, response, encoding } = c.req.valid("json");
+
+		const responseBuffer = parseBuffer(response, encoding);
+		const matchBuffer = parseBuffer(match, encoding);
+
+		const interceptor: InterceptorDescription = {
+			name,
+			fn: async (data: Buffer, next: Next, state: InterceptorState): Promise<Buffer> => {
+				state.invokeCount++;
+				if (data.equals(matchBuffer)) {
+					state.matchCount++;
+					return responseBuffer;
+				}
+				return next(data);
+			},
+		};
+
+		for (const proxy of proxyStore.proxies) {
+			proxy.addGlobalInterceptor(interceptor);
+		}
+
+		return c.json({ success: true, name });
 	});
 
 	return { app, proxy: proxyStore.proxies[0], config };

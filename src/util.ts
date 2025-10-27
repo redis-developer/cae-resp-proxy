@@ -1,4 +1,4 @@
-import type { ProxyConfig } from "redis-monorepo/packages/test-utils/lib/redis-proxy.ts";
+import type { ProxyConfig } from "redis-monorepo/packages/test-utils/lib/proxy/redis-proxy.ts";
 import { z } from "zod";
 
 export const encodingSchema = z.object({
@@ -20,6 +20,13 @@ export const connectionIdsQuerySchema = z.object({
 export const scenarioSchema = z.object({
 	responses: z.array(z.string()).min(1, "At least one response is required"),
 	encoding: z.enum(["base64", "raw"]).default("base64"),
+});
+
+export const interceptorSchema = z.object({
+	name: z.string(),
+	encoding: z.enum(["raw", "base64"]),
+	match: z.string(),
+	response: z.string(),
 });
 
 export function parseBuffer(data: string, encoding: "base64" | "raw"): Buffer {
