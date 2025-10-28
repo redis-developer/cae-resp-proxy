@@ -5,6 +5,7 @@ import { z } from "zod";
 export type ExtendedProxyConfig = Omit<ProxyConfig, "listenPort"> & {
 	listenPort: number | number[];
 	readonly apiPort?: number;
+	simulateCluster?: boolean;
 };
 
 export const encodingSchema = z.object({
@@ -50,6 +51,7 @@ export const DEFAULT_LISTEN_PORT = 6379;
 export const DEFAULT_LISTEN_HOST = "127.0.0.1";
 export const DEFAULT_ENABLE_LOGGING = false;
 export const DEFAULT_API_PORT = 3000;
+export const DEFAULT_SIMULATE_CLUSTER = false;
 
 export const proxyConfigSchema = z.object({
 	listenPort: z
@@ -61,10 +63,13 @@ export const proxyConfigSchema = z.object({
 	timeout: z.coerce.number().optional(),
 	enableLogging: z.boolean().optional().default(DEFAULT_ENABLE_LOGGING),
 	apiPort: z.number().optional().default(DEFAULT_API_PORT),
+	simulateCluster: z.boolean().optional().default(DEFAULT_SIMULATE_CLUSTER),
 });
 
 const envSchema = z.object({
-	LISTEN_PORT: z.coerce.number().default(DEFAULT_LISTEN_PORT),
+	LISTEN_PORT: z
+		.union([z.coerce.number(), z.array(z.coerce.number()).min(1)])
+		.default(DEFAULT_LISTEN_PORT),
 	TARGET_HOST: z.string(),
 	TARGET_PORT: z.coerce.number(),
 	LISTEN_HOST: z.string().optional(),
@@ -74,6 +79,14 @@ const envSchema = z.object({
 		.transform((val) => val === "true")
 		.optional(),
 	API_PORT: z.coerce.number().optional().default(DEFAULT_API_PORT),
+	SIMULATE_CLUSTER:  z
+	  .enum(["true", "false"])
+  	.transform((val) => {
+     console.log('transform', val, val === "true");
+      return val === "true";
+   })
+  	.optional()
+    .default(DEFAULT_SIMULATE_CLUSTER),
 });
 
 export function parseCliArgs(argv: string[]): Record<string, string | boolean | number | number[]> {
@@ -124,14 +137,15 @@ Optional options:
   --timeout <number>        Connection timeout in milliseconds
   --enableLogging           Enable verbose logging
   --apiPort                 Port to start the http on (default: 3000 )
+  --simulateCluster         Simulate Redis Cluster behavior like \`cluster slots\` (default: false)
 
 Or configure using environment variables:
   LISTEN_PORT, TARGET_HOST, TARGET_PORT (required)
-  LISTEN_HOST, TIMEOUT, ENABLE_LOGGING, API_PORT (optional)
+  LISTEN_HOST, TIMEOUT, ENABLE_LOGGING, API_PORT, SIMULATE_CLUSTER (optional)
 
 Examples:
   bun run proxy --listenPort=6379 --targetHost=localhost --targetPort=6380
-  bun run proxy --listenPort=6379,6380,6381 --targetHost=localhost --targetPort=6382
+  bun run proxy --listenPort=6379,6380,6381 --simulateCluster --targetHost=localhost --targetPort=6382
   docker run -p 3000:3000 -p 6379:6379  -e LISTEN_PORT=6379 -e TARGET_HOST=host.docker.internal -e TARGET_PORT=6380 your-image-name
   `);
 }
@@ -146,7 +160,9 @@ export function getConfig(): ExtendedProxyConfig {
 		configSource = cliArgs;
 	} else {
 		console.log("Using configuration from environment variables.");
+		console.log('process.env', process.env.SIMULATE_CLUSTER);
 		const parsedEnv = envSchema.parse(process.env);
+		console.log('parsedEnv', parsedEnv);
 		configSource = {
 			listenPort: parsedEnv.LISTEN_PORT,
 			listenHost: parsedEnv.LISTEN_HOST,
@@ -155,6 +171,7 @@ export function getConfig(): ExtendedProxyConfig {
 			timeout: parsedEnv.TIMEOUT,
 			enableLogging: parsedEnv.ENABLE_LOGGING,
 			apiPort: parsedEnv.API_PORT,
+			simulateCluster: parsedEnv.SIMULATE_CLUSTER
 		};
 	}
 

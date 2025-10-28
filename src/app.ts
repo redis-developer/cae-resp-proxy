@@ -12,8 +12,8 @@ import {
 } from "redis-monorepo/packages/test-utils/lib/proxy/redis-proxy.ts";
 import ProxyStore, { makeId } from "./proxy-store.ts";
 import {
-	type ExtendedProxyConfig,
 	connectionIdsQuerySchema,
+	type ExtendedProxyConfig,
 	encodingSchema,
 	getConfig,
 	interceptorSchema,
@@ -29,43 +29,37 @@ const startNewProxy = (config: ProxyConfig) => {
 	return proxy;
 };
 
-interface Mapping {
-	from: {
-		host: string;
-		port: number;
-	};
-	to: {
-		host: string;
-		port: number;
-	};
-}
+const setClusterSimulateInterceptor = (proxyStore: ProxyStore) => {
+	const interceptor: InterceptorDescription = {
+		name: `cluster-simulation-interceptor`,
+		fn: async (data: Buffer, next: Next, state: InterceptorState) => {
+			state.invokeCount++;
 
-const addressMapping = new Map<string, Mapping>();
+			if (data.toString().toLowerCase() !== "*2\r\n$7\r\ncluster\r\n$5\r\nslots\r\n") {
+				return next(data);
+			}
 
-const setClusterOverwriteInterceptors = (
-	addressMapping: Map<string, Mapping>,
-	proxyStore: ProxyStore,
-) => {
-	const interceptors: InterceptorDescription[] = [];
-	for (const mapping of addressMapping.values()) {
-		interceptors.push({
-			name: `ip-replacer-${mapping.to.port}`,
-			fn: async (data: Buffer, next: Next, state: InterceptorState) => {
-				state.invokeCount++;
-				const response = await next(data);
-				// for example $9\r\n127.0.0.1\r\n:3000
-				const from = `$${mapping.from.host.length}\r\n${mapping.from.host}\r\n:${mapping.from.port}`;
-				if (response.includes(from)) {
-					state.matchCount++;
-					const to = `$${mapping.to.host.length}\r\n${mapping.to.host}\r\n:${mapping.to.port}`;
-					return Buffer.from(response.toString().replaceAll(from, to));
-				}
-				return response;
-			},
-		});
-	}
+			state.matchCount++;
+
+			const proxies = proxyStore.proxies;
+			const slotLenght = Math.floor(16384 / proxies.length);
+
+			let current = -1;
+			const mapping = proxyStore.proxies.map((proxy, i) => {
+				const from = current + 1;
+				const to = i === proxies.length - 1 ? 16383 : current + slotLenght;
+				current = to;
+				const id = `proxy-id-${proxy.config.listenPort}`;
+				return `*3\r\n:${from}\r\n:${to}\r\n*3\r\n$${proxy.config.listenHost.length}\r\n${proxy.config.listenHost}\r\n:${proxy.config.listenPort}\r\n$${id.length}\r\n${id}\r\n`;
+			});
+
+			const response = `*${proxies.length}\r\n${mapping.join("")}`;
+			return Buffer.from(response);
+		},
+	};
+
 	for (const proxy of proxyStore.proxies) {
-		proxy.setGlobalInterceptors(interceptors);
+		proxy.setGlobalInterceptors([interceptor]);
 	}
 };
 
@@ -73,6 +67,7 @@ export function createApp(testConfig?: ExtendedProxyConfig) {
 	const config = testConfig || getConfig();
 	const app = new Hono();
 	app.use(logger());
+	console.log(config);
 
 	const proxyStore = new ProxyStore();
 
@@ -83,44 +78,23 @@ export function createApp(testConfig?: ExtendedProxyConfig) {
 		const proxyConfig: ProxyConfig = { ...config, listenPort: port };
 		const nodeId = makeId(config.targetHost, config.targetPort, port);
 		proxyStore.add(nodeId, startNewProxy(proxyConfig));
-		addressMapping.set(nodeId, {
-			from: {
-				host: config.targetHost,
-				port: config.targetPort,
-			},
-			to: {
-				host: config.listenHost ?? "127.0.0.1",
-				port: port,
-			},
-		});
 	}
 
-	setClusterOverwriteInterceptors(addressMapping, proxyStore);
+	config.simulateCluster && setClusterSimulateInterceptor(proxyStore);
 
 	app.post("/nodes", zValidator("json", proxyConfigSchema), async (c) => {
 		const data = await c.req.json();
 		const cfg: ProxyConfig = { ...config, ...data };
-		const nodeId = makeId(cfg.targetHost, cfg.targetPort);
+		const nodeId = makeId(cfg.targetHost, cfg.targetPort, cfg.listenPort);
 		proxyStore.add(nodeId, startNewProxy(cfg));
-		addressMapping.set(nodeId, {
-			from: {
-				host: cfg.targetHost,
-				port: cfg.targetPort,
-			},
-			to: {
-				host: cfg.listenHost ?? "127.0.0.1",
-				port: cfg.listenPort,
-			},
-		});
-		setClusterOverwriteInterceptors(addressMapping, proxyStore);
+		config.simulateCluster && setClusterSimulateInterceptor(proxyStore);
 		return c.json({ success: true, cfg });
 	});
 
 	app.delete("/nodes/:id", async (c) => {
 		const nodeId = c.req.param("id");
 		const success = await proxyStore.delete(nodeId);
-		addressMapping.delete(nodeId);
-		setClusterOverwriteInterceptors(addressMapping, proxyStore);
+		config.simulateCluster && setClusterSimulateInterceptor(proxyStore);
 		return c.json({ success });
 	});
 
@@ -247,7 +221,7 @@ export function createApp(testConfig?: ExtendedProxyConfig) {
 			name,
 			fn: async (data: Buffer, next: Next, state: InterceptorState): Promise<Buffer> => {
 				state.invokeCount++;
-				if (data.equals(matchBuffer)) {
+				if (data.toString().toLowerCase() === matchBuffer.toString().toLowerCase()) {
 					state.matchCount++;
 					return responseBuffer;
 				}
@@ -262,5 +236,5 @@ export function createApp(testConfig?: ExtendedProxyConfig) {
 		return c.json({ success: true, name });
 	});
 
-	return { app, proxy: proxyStore.proxies[0], config };
+	return { app, proxy: proxyStore.proxies[0] as RedisProxy, config };
 }
