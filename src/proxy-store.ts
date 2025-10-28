@@ -1,6 +1,7 @@
-import type { RedisProxy } from "redis-monorepo/packages/test-utils/lib/redis-proxy";
+import type { RedisProxy } from "redis-monorepo/packages/test-utils/lib/proxy/redis-proxy";
 
-export const makeId = (host: string, port: number) => `${host}:${port}`;
+export const makeId = (host: string, port: number, listenPort?: number) =>
+	listenPort ? `${host}:${port}@${listenPort}` : `${host}:${port}`;
 
 export default class ProxyStore {
 	#proxies = new Map<string, RedisProxy>();

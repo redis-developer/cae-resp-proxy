@@ -17,9 +17,11 @@ describe("Redis Proxy API", () => {
 	let proxy: RedisProxy;
 	let mockRedisServer: any;
 	let targetPort: number;
+	let listenPort: number;
 
 	beforeAll(async () => {
 		const freePort = await getFreePortNumber();
+		listenPort = freePort;
 		targetPort = await getFreePortNumber();
 
 		mockRedisServer = createMockRedisServer(targetPort);
@@ -55,7 +57,7 @@ describe("Redis Proxy API", () => {
 		const res = await app.request("/stats");
 		expect(res.status).toBe(200);
 
-		const stats = (await res.json())[makeId(TARGET_HOST, targetPort)];
+		const stats = (await res.json())[makeId(TARGET_HOST, targetPort, listenPort)];
 		expect(stats).toHaveProperty("activeConnections");
 		expect(stats).toHaveProperty("totalConnections");
 		expect(stats).toHaveProperty("connections");
@@ -67,7 +69,7 @@ describe("Redis Proxy API", () => {
 		const res = await app.request("/connections");
 		expect(res.status).toBe(200);
 
-		const result = (await res.json())[makeId(TARGET_HOST, targetPort)];
+		const result = (await res.json())[makeId(TARGET_HOST, targetPort, listenPort)];
 		expect(result).toBeArray();
 		expect(result.length).toBe(0);
 	});
@@ -158,14 +160,16 @@ describe("Redis Proxy API", () => {
 
 					const statsRes = await app.request("/stats");
 					expect(statsRes.status).toBe(200);
-					const stats = (await statsRes.json())[makeId(TARGET_HOST, targetPort)];
+					const stats = (await statsRes.json())[makeId(TARGET_HOST, targetPort, listenPort)];
 					expect(stats.activeConnections).toBe(1);
 					expect(stats.totalConnections).toBeGreaterThanOrEqual(1);
 					expect(stats.connections.length).toBe(1);
 
 					const connectionsRes = await app.request("/connections");
 					expect(connectionsRes.status).toBe(200);
-					const connectionsResult = (await connectionsRes.json())[makeId(TARGET_HOST, targetPort)];
+					const connectionsResult = (await connectionsRes.json())[
+						makeId(TARGET_HOST, targetPort, listenPort)
+					];
 					expect(connectionsResult.length).toBe(1);
 					const connectionId = connectionsResult[0];
 					expect(typeof connectionId).toBe("string");
@@ -196,7 +200,9 @@ describe("Redis Proxy API", () => {
 					await new Promise((resolve) => setTimeout(resolve, 100));
 
 					const finalStatsRes = await app.request("/stats");
-					const finalStats = (await finalStatsRes.json())[makeId(TARGET_HOST, targetPort)];
+					const finalStats = (await finalStatsRes.json())[
+						makeId(TARGET_HOST, targetPort, listenPort)
+					];
 					expect(finalStats.activeConnections).toBe(0);
 
 					resolve();
@@ -230,13 +236,15 @@ describe("Redis Proxy API", () => {
 		await new Promise((resolve) => setTimeout(resolve, 100));
 
 		const statsRes = await app.request("/stats");
-		const stats = (await statsRes.json())[makeId(TARGET_HOST, targetPort)];
+		const stats = (await statsRes.json())[makeId(TARGET_HOST, targetPort, listenPort)];
 		expect(stats.activeConnections).toBe(1);
 		expect(stats.totalConnections).toBeGreaterThanOrEqual(1);
 		expect(stats.connections.length).toBe(1);
 
 		const connectionsRes = await app.request("/connections");
-		const connectionsResult = (await connectionsRes.json())[makeId(TARGET_HOST, targetPort)];
+		const connectionsResult = (await connectionsRes.json())[
+			makeId(TARGET_HOST, targetPort, listenPort)
+		];
 		expect(connectionsResult.length).toBe(1);
 		const connectionId = connectionsResult[0];
 
@@ -260,7 +268,7 @@ describe("Redis Proxy API", () => {
 		await new Promise((resolve) => setTimeout(resolve, 100));
 
 		const finalStatsRes = await app.request("/stats");
-		const finalStats = (await finalStatsRes.json())[makeId(TARGET_HOST, targetPort)];
+		const finalStats = (await finalStatsRes.json())[makeId(TARGET_HOST, targetPort, listenPort)];
 		expect(finalStats.activeConnections).toBe(0);
 	});
 });

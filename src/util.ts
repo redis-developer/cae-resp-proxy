@@ -1,6 +1,12 @@
 import type { ProxyConfig } from "redis-monorepo/packages/test-utils/lib/proxy/redis-proxy.ts";
 import { z } from "zod";
 
+// Extended ProxyConfig that supports multiple listen ports
+export type ExtendedProxyConfig = Omit<ProxyConfig, "listenPort"> & {
+	listenPort: number | number[];
+	readonly apiPort?: number;
+};
+
 export const encodingSchema = z.object({
 	encoding: z.enum(["base64", "raw"]).default("base64"),
 });
@@ -46,7 +52,9 @@ export const DEFAULT_ENABLE_LOGGING = false;
 export const DEFAULT_API_PORT = 3000;
 
 export const proxyConfigSchema = z.object({
-	listenPort: z.coerce.number().default(DEFAULT_LISTEN_PORT),
+	listenPort: z
+		.union([z.coerce.number(), z.array(z.coerce.number()).min(1)])
+		.default(DEFAULT_LISTEN_PORT),
 	listenHost: z.string().optional().default(DEFAULT_LISTEN_HOST),
 	targetHost: z.string(),
 	targetPort: z.coerce.number(),
@@ -68,8 +76,8 @@ const envSchema = z.object({
 	API_PORT: z.coerce.number().optional().default(DEFAULT_API_PORT),
 });
 
-export function parseCliArgs(argv: string[]): Record<string, string | boolean | number> {
-	const args: Record<string, string | boolean | number> = {};
+export function parseCliArgs(argv: string[]): Record<string, string | boolean | number | number[]> {
+	const args: Record<string, string | boolean | number | number[]> = {};
 	for (let i = 0; i < argv.length; i++) {
 		const arg = argv[i];
 		if (arg?.startsWith("--")) {
@@ -90,9 +98,13 @@ export function parseCliArgs(argv: string[]): Record<string, string | boolean | 
 	return args;
 }
 
-function parseValue(value: string): boolean | number | string {
+function parseValue(value: string): boolean | number | string | number[] {
 	if (value === "true") return true;
 	if (value === "false") return false;
+	if (value.includes(",")) {
+		const parts = value.split(",").map((v) => Number(v.trim()));
+		if (parts.every((n) => !Number.isNaN(n))) return parts;
+	}
 	const num = Number(value);
 	if (!Number.isNaN(num)) return num;
 	return value;
@@ -103,9 +115,9 @@ export function printUsage() {
 Usage: bun run proxy [options]
 
 Required options:
-  --listenPort <number>     Port to listen on
-  --targetHost <string>     Target host to forward to
-  --targetPort <number>     Target port to forward to
+  --listenPort <number|number[]>  Port(s) to listen on (comma-separated for multiple)
+  --targetHost <string>           Target host to forward to
+  --targetPort <number>           Target port to forward to
 
 Optional options:
   --listenHost <string>     Host to listen on (default: 127.0.0.1)
@@ -119,14 +131,15 @@ Or configure using environment variables:
 
 Examples:
   bun run proxy --listenPort=6379 --targetHost=localhost --targetPort=6380
+  bun run proxy --listenPort=6379,6380,6381 --targetHost=localhost --targetPort=6382
   docker run -p 3000:3000 -p 6379:6379  -e LISTEN_PORT=6379 -e TARGET_HOST=host.docker.internal -e TARGET_PORT=6380 your-image-name
   `);
 }
 
-export function getConfig(): ProxyConfig & { readonly apiPort?: number } {
+export function getConfig(): ExtendedProxyConfig {
 	const cliArgs = parseCliArgs(Bun.argv.slice(2));
 
-	let configSource: Record<string, string | number | boolean | undefined>;
+	let configSource: Record<string, string | number | boolean | number[] | undefined>;
 
 	if (Object.keys(cliArgs).length > 0) {
 		console.log("Using configuration from command-line arguments.");

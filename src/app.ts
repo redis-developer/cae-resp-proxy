@@ -12,6 +12,7 @@ import {
 } from "redis-monorepo/packages/test-utils/lib/proxy/redis-proxy.ts";
 import ProxyStore, { makeId } from "./proxy-store.ts";
 import {
+	type ExtendedProxyConfig,
 	connectionIdsQuerySchema,
 	encodingSchema,
 	getConfig,
@@ -68,24 +69,32 @@ const setClusterOverwriteInterceptors = (
 	}
 };
 
-export function createApp(testConfig?: ProxyConfig & { readonly apiPort?: number }) {
+export function createApp(testConfig?: ExtendedProxyConfig) {
 	const config = testConfig || getConfig();
 	const app = new Hono();
 	app.use(logger());
 
 	const proxyStore = new ProxyStore();
-	const nodeId = makeId(config.targetHost, config.targetPort);
-	proxyStore.add(nodeId, startNewProxy(config));
-	addressMapping.set(nodeId, {
-		from: {
-			host: config.targetHost,
-			port: config.targetPort,
-		},
-		to: {
-			host: config.listenHost ?? "127.0.0.1",
-			port: config.listenPort,
-		},
-	});
+
+	// Handle both single port and array of ports
+	const listenPorts = Array.isArray(config.listenPort) ? config.listenPort : [config.listenPort];
+
+	for (const port of listenPorts) {
+		const proxyConfig: ProxyConfig = { ...config, listenPort: port };
+		const nodeId = makeId(config.targetHost, config.targetPort, port);
+		proxyStore.add(nodeId, startNewProxy(proxyConfig));
+		addressMapping.set(nodeId, {
+			from: {
+				host: config.targetHost,
+				port: config.targetPort,
+			},
+			to: {
+				host: config.listenHost ?? "127.0.0.1",
+				port: port,
+			},
+		});
+	}
+
 	setClusterOverwriteInterceptors(addressMapping, proxyStore);
 
 	app.post("/nodes", zValidator("json", proxyConfigSchema), async (c) => {
