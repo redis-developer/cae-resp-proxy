@@ -19,7 +19,7 @@ describe("POST /interceptors", () => {
 		mockRedisServer = createMockRedisServer(targetPort);
 
 		const testConfig = {
-			listenPort: freePort,
+			listenPort: [freePort],
 			listenHost: "127.0.0.1",
 			targetHost: "127.0.0.1",
 			targetPort: targetPort,

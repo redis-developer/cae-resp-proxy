@@ -27,7 +27,7 @@ describe("Redis Proxy API", () => {
 		mockRedisServer = createMockRedisServer(targetPort);
 
 		const testConfig = {
-			listenPort: freePort,
+			listenPort: [freePort],
 			listenHost: "127.0.0.1",
 			targetHost: TARGET_HOST,
 			targetPort: targetPort,
@@ -79,7 +79,10 @@ describe("Redis Proxy API", () => {
 
 		const res = await app.request("/send-to-client/non-existent-connection?encoding=base64", {
 			method: "POST",
-			body: testData,
+			headers: {
+				"Content-Type": "application/json",
+			},
+			body: JSON.stringify({ data: testData }),
 		});
 
 		expect(res.status).toBe(200);
@@ -94,7 +97,10 @@ describe("Redis Proxy API", () => {
 
 		const res = await app.request("/send-to-clients", {
 			method: "POST",
-			body: testData,
+			headers: {
+				"Content-Type": "application/json",
+			},
+			body: JSON.stringify({ data: testData }),
 		});
 
 		expect(res.status).toBe(400); // Should fail validation due to missing connectionIds
@@ -105,7 +111,10 @@ describe("Redis Proxy API", () => {
 
 		const res = await app.request("/send-to-clients?connectionIds=conn1,conn2&encoding=base64", {
 			method: "POST",
-			body: testData,
+			headers: {
+				"Content-Type": "application/json",
+			},
+			body: JSON.stringify({ data: testData }),
 		});
 
 		expect(res.status).toBe(200);
@@ -119,7 +128,10 @@ describe("Redis Proxy API", () => {
 
 		const res = await app.request("/send-to-all-clients?encoding=base64", {
 			method: "POST",
-			body: testData,
+			headers: {
+				"Content-Type": "application/json",
+			},
+			body: JSON.stringify({ data: testData }),
 		});
 
 		expect(res.status).toBe(200);
@@ -183,7 +195,10 @@ describe("Redis Proxy API", () => {
 					const pingCommand = Buffer.from("*1\r\n$4\r\nPING\r\n").toString("base64");
 					const sendRes = await app.request(`/send-to-client/${connectionId}?encoding=base64`, {
 						method: "POST",
-						body: pingCommand,
+						headers: {
+							"Content-Type": "application/json",
+						},
+						body: JSON.stringify({ data: pingCommand }),
 					});
 
 					expect(sendRes.status).toBe(200);
@@ -254,7 +269,10 @@ describe("Redis Proxy API", () => {
 		const pingCommand = Buffer.from("*1\r\n$4\r\nPING\r\n").toString("base64");
 		const sendRes = await app.request(`/send-to-client/${connectionId}?encoding=base64`, {
 			method: "POST",
-			body: pingCommand,
+			headers: {
+				"Content-Type": "application/json",
+			},
+			body: JSON.stringify({ data: pingCommand }),
 		});
 
 		expect(sendRes.status).toBe(200);
