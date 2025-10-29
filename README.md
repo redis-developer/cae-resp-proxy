@@ -39,14 +39,15 @@ RESP3 Push notification: `>4\r\n$6\r\nMOVING\r\n:1\r\n:2\r\n$6\r\nhost:3\r\n`
 **cURL Example:**
 ```bash
 curl -X POST "http://localhost:3000/send-to-all-clients?encoding=raw" \
-  --data-binary ">4\r\n\$6\r\nMOVING\r\n:1\r\n:2\r\n\$6\r\nhost:3\r\n"
+  -H 'Content-Type: application/json' \
+  -d '{"data" : ">4\r\n$6\r\nMOVING\r\n:1\r\n:2\r\n$6\r\nhost:3\r\n"}'
 ```
 
 **TypeScript Example:**
 ```typescript
 const response = await fetch('http://localhost:3000/send-to-all-clients?encoding=raw', {
   method: 'POST',
-  body: '>4\r\n$6\r\nMOVING\r\n:1\r\n:2\r\n$6\r\nhost:3\r\n'
+  body: { data: '>4\r\n$6\r\nMOVING\r\n:1\r\n:2\r\n$6\r\nhost:3\r\n' }
 });
 
 const result = await response.json();
@@ -58,16 +59,19 @@ console.log(result.success ? 'Injected' : 'Failed');
 package main
 
 import (
+    "bytes"
+    "encoding/json"
     "io"
     "net/http"
     "strings"
 )
 
 func main() {
-    payload := strings.NewReader(">4\r\n$6\r\nMOVING\r\n:1\r\n:2\r\n$6\r\nhost:3\r\n")
-    resp, _ := http.Post("http://localhost:3000/send-to-all-clients?encoding=raw", "", payload)
+    data := map[string]string{"data": ">4\r\n$6\r\nMOVING\r\n:1\r\n:2\r\n$6\r\nhost:3\r\n"}
+    jsonData, _ := json.Marshal(data)
+    resp, _ := http.Post("http://localhost:3000/send-to-all-clients?encoding=raw", "application/json", bytes.NewBuffer(jsonData))
     defer resp.Body.Close()
-    
+
     body, _ := io.ReadAll(resp.Body)
     if strings.Contains(string(body), `"success":true`) {
         println("Injected")
@@ -83,10 +87,11 @@ import java.net.URI;
 public class RespProxyClient {
     public static void main(String[] args) throws Exception {
         var client = HttpClient.newHttpClient();
+        var json = "{\"data\":\">4\\r\\n$6\\r\\nMOVING\\r\\n:1\\r\\n:2\\r\\n$6\\r\\nhost:3\\r\\n\"}";
         var request = HttpRequest.newBuilder()
             .uri(URI.create("http://localhost:3000/send-to-all-clients?encoding=raw"))
-            .POST(HttpRequest.BodyPublishers.ofString(
-                ">4\r\n$6\r\nMOVING\r\n:1\r\n:2\r\n$6\r\nhost:3\r\n"))
+            .header("Content-Type", "application/json")
+            .POST(HttpRequest.BodyPublishers.ofString(json))
             .build();
 
         var response = client.send(request, HttpResponse.BodyHandlers.ofString());
@@ -103,8 +108,9 @@ public class RespProxyClient {
 import json
 import urllib.request
 
-data = b">4\r\n$6\r\nMOVING\r\n:1\r\n:2\r\n$6\r\nhost:3\r\n"
-req = urllib.request.Request("http://localhost:3000/send-to-all-clients?encoding=raw", data)
+payload = {"data": ">4\r\n$6\r\nMOVING\r\n:1\r\n:2\r\n$6\r\nhost:3\r\n"}
+data = json.dumps(payload).encode('utf-8')
+req = urllib.request.Request("http://localhost:3000/send-to-all-clients?encoding=raw", data, {"Content-Type": "application/json"})
 
 with urllib.request.urlopen(req) as response:
     result = json.loads(response.read())
@@ -255,17 +261,19 @@ Send Redis protocol data to a specific client connection.
 - `connectionId` (path): Target connection ID
 - `encoding` (query): Data encoding format (`base64` or `raw`, default: `base64`)
 
-**Body:** Raw data or base64-encoded data
+**Body:** JSON object with "data" property containing the payload
 
 **Example:**
 ```bash
 # Send PING command (base64 encoded)
 curl -X POST "http://localhost:3000/send-to-client/conn_123?encoding=base64" \
-  -d "KjENCiQ0DQpQSU5HDQo="
+  -H 'Content-Type: application/json' \
+  -d '{"data": "KjENCiQ0DQpQSU5HDQo="}'
 
 # Send raw binary data
 curl -X POST "http://localhost:3000/send-to-client/conn_123?encoding=raw" \
-  --data-binary "*1\r\n$4\r\nPING\r\n"
+  -H 'Content-Type: application/json' \
+  -d '{"data": "*1\r\n$4\r\nPING\r\n"}'
 ```
 
 **Response:**
@@ -289,7 +297,8 @@ Send data to multiple specific client connections.
 **Example:**
 ```bash
 curl -X POST "http://localhost:3000/send-to-clients?connectionIds=conn_123,conn_456&encoding=base64" \
-  -d "KjENCiQ0DQpQSU5HDQo="
+  -H 'Content-Type: application/json' \
+  -d '{"data": "KjENCiQ0DQpQSU5HDQo="}'
 ```
 
 #### Send Data to All Clients
@@ -301,7 +310,8 @@ Broadcast data to all active client connections.
 **Example:**
 ```bash
 curl -X POST "http://localhost:3000/send-to-all-clients?encoding=base64" \
-  -d "KjENCiQ0DQpQSU5HDQo="
+  -H 'Content-Type: application/json' \
+  -d '{"data": "KjENCiQ0DQpQSU5HDQo="}'
 ```
 
 #### Close Connection
@@ -328,4 +338,3 @@ Send custom Redis responses to specific clients for testing scenarios.
 
 ### Protocol Analysis
 Analyze Redis protocol communication patterns.
-

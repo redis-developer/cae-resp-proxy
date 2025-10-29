@@ -21,6 +21,7 @@ import {
 	parseBuffer,
 	proxyConfigSchema,
 	scenarioSchema,
+  dataSchema,
 } from "./util.ts";
 
 const startNewProxy = (config: ProxyConfig) => {
@@ -67,7 +68,6 @@ export function createApp(testConfig?: ExtendedProxyConfig) {
 	const config = testConfig || getConfig();
 	const app = new Hono();
 	app.use(logger());
-	console.log(config);
 
 	const proxyStore = new ProxyStore();
 
@@ -128,10 +128,11 @@ export function createApp(testConfig?: ExtendedProxyConfig) {
 		"/send-to-client/:connectionId",
 		zValidator("param", paramSchema),
 		zValidator("query", encodingSchema),
+		zValidator("json", dataSchema),
 		async (c) => {
 			const { connectionId } = c.req.valid("param");
 			const { encoding } = c.req.valid("query");
-			const data = await c.req.text();
+			const { data } = c.req.valid("json");
 
 			const buffer = parseBuffer(data, encoding);
 
@@ -148,9 +149,9 @@ export function createApp(testConfig?: ExtendedProxyConfig) {
 		},
 	);
 
-	app.post("/send-to-clients", zValidator("query", connectionIdsQuerySchema), async (c) => {
+	app.post("/send-to-clients", zValidator("query", connectionIdsQuerySchema), zValidator("json", dataSchema), async (c) => {
 		const { connectionIds, encoding } = c.req.valid("query");
-		const data = await c.req.text();
+		const { data } = c.req.valid("json");
 
 		const buffer = parseBuffer(data, encoding);
 
@@ -161,9 +162,9 @@ export function createApp(testConfig?: ExtendedProxyConfig) {
 		return c.json({ results });
 	});
 
-	app.post("/send-to-all-clients", zValidator("query", encodingSchema), async (c) => {
+	app.post("/send-to-all-clients", zValidator("query", encodingSchema), zValidator("json", dataSchema), async (c) => {
 		const { encoding } = c.req.valid("query");
-		const data = await c.req.text();
+    const { data } = c.req.valid("json");
 		const buffer = parseBuffer(data, encoding);
 		const results: SendResult[] = [];
 		for (const proxy of proxyStore.proxies) {

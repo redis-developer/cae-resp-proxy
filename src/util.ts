@@ -8,6 +8,10 @@ export type ExtendedProxyConfig = Omit<ProxyConfig, "listenPort"> & {
 	simulateCluster?: boolean;
 };
 
+export const dataSchema = z.object({
+  data: z.string().min(1, "Data is required"),
+});
+
 export const encodingSchema = z.object({
 	encoding: z.enum(["base64", "raw"]).default("base64"),
 });
