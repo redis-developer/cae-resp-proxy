@@ -1,26 +1,15 @@
 networks:
   redis-net:
     driver: bridge
-    ipam:
-      config:
-        - subnet: 172.25.0.0/24
-          gateway: 172.25.0.1
 
 services:
-  redis-cluster:
+  redis:
     image: redislabs/client-libs-test:8.2
-    container_name: redis-cluster
-    command: ["--bind", "0.0.0.0", "--cluster-announce-ip", "172.25.0.10"]
-    environment:
-      REDIS_CLUSTER: "yes"
+    container_name: redis
     ports:
       - "3000:3000"
-      - "3001:3001"
-      - "3002:3002"
     networks:
-      redis-net:
-        ipv4_address: 172.25.0.10
-    # Optional healthcheck (tweak as needed)
+      - redis-net
     healthcheck:
       test: ["CMD", "redis-cli", "-p", "3000", "PING"]
       interval: 10s
@@ -32,45 +21,34 @@ services:
     container_name: resp-proxy
     environment:
       LISTEN_HOST: "0.0.0.0"
-      LISTEN_PORT: "6379"
-      TARGET_HOST: "172.25.0.10"
+      LISTEN_PORT: "6379,6380,6381"
+      TARGET_HOST: "redis"
       TARGET_PORT: "3000"
       API_PORT: "4000"
       ENABLE_LOGGING: true
+      SIMULATE_CLUSTER: true
     ports:
       - "6379:6379"
-      - "6479:6479"
-      - "6579:6579"
+      - "6380:6380"
+      - "6381:6381"
       - "4000:4000"
     depends_on:
-      - redis-cluster
+      - redis
     networks:
-      redis-net:
-        ipv4_address: 172.25.0.11
-    # Optional healthcheck to verify proxy API port
+      - redis-net
     healthcheck:
       test: ["CMD", "sh", "-c", "wget -qO- http://localhost:4000/stats || exit 1"]
       interval: 10s
       timeout: 3s
       retries: 5
 
-  resp-proxy-init:
-    image: curlimages/curl:8.9.1
-    container_name: resp-proxy-init
-    depends_on:
-      - resp-proxy
-    networks:
-      - redis-net
-    command: >
-      sh -c '
-        set -e
-        echo "Waiting for proxy API...";
-        until curl -s http://resp-proxy:4000/stats >/dev/null 2>&1; do
-          sleep 1;
-        done;
-        echo "Registering node port 3001 -> listen 6479";
-        curl -s -X POST http://resp-proxy:4000/nodes -H "Content-Type: application/json" -d "{\"targetHost\":\"172.25.0.10\",\"targetPort\":3001,\"listenPort\":6479}";
-        echo "Registering node port 3002 -> listen 6579";
-        curl -s -X POST http://resp-proxy:4000/nodes -H "Content-Type: application/json" -d "{\"targetHost\":\"172.25.0.10\",\"targetPort\":3002,\"listenPort\":6579}";
-        echo "Done."
-      '
+  # debug:
+  #   image: nicolaka/netshoot:latest
+  #   container_name: debug
+  #   depends_on:
+  #     - resp-proxy
+  #   networks:
+  #     - redis-net
+  #   command: sleep infinity
+  #   stdin_open: true
+  #   tty: true

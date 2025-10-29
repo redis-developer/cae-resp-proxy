@@ -3,7 +3,7 @@ import { z } from "zod";
 
 // Extended ProxyConfig that supports multiple listen ports
 export type ExtendedProxyConfig = Omit<ProxyConfig, "listenPort"> & {
-	listenPort: number | number[];
+	listenPort: number[];
 	readonly apiPort?: number;
 	simulateCluster?: boolean;
 };
@@ -51,16 +51,20 @@ export function parseBuffer(data: string, encoding: "base64" | "raw"): Buffer {
 	}
 }
 
-export const DEFAULT_LISTEN_PORT = 6379;
+export const DEFAULT_LISTEN_PORT = [6379];
 export const DEFAULT_LISTEN_HOST = "127.0.0.1";
 export const DEFAULT_ENABLE_LOGGING = false;
 export const DEFAULT_API_PORT = 3000;
 export const DEFAULT_SIMULATE_CLUSTER = false;
 
+const listenPortSchema =  z.preprocess(value => {
+  if (Array.isArray(value)) return value;
+  if (typeof value === 'string') return value.split(',');
+ 	return [value]
+}, z.array(z.coerce.number()).min(1)).default(DEFAULT_LISTEN_PORT)
+
 export const proxyConfigSchema = z.object({
-	listenPort: z
-		.union([z.coerce.number(), z.array(z.coerce.number()).min(1)])
-		.default(DEFAULT_LISTEN_PORT),
+	listenPort: listenPortSchema,
 	listenHost: z.string().optional().default(DEFAULT_LISTEN_HOST),
 	targetHost: z.string(),
 	targetPort: z.coerce.number(),
@@ -71,9 +75,7 @@ export const proxyConfigSchema = z.object({
 });
 
 const envSchema = z.object({
-	LISTEN_PORT: z
-		.union([z.coerce.number(), z.array(z.coerce.number()).min(1)])
-		.default(DEFAULT_LISTEN_PORT),
+	LISTEN_PORT: listenPortSchema,
 	TARGET_HOST: z.string(),
 	TARGET_PORT: z.coerce.number(),
 	LISTEN_HOST: z.string().optional(),
@@ -85,10 +87,7 @@ const envSchema = z.object({
 	API_PORT: z.coerce.number().optional().default(DEFAULT_API_PORT),
 	SIMULATE_CLUSTER:  z
 	  .enum(["true", "false"])
-  	.transform((val) => {
-     console.log('transform', val, val === "true");
-      return val === "true";
-   })
+  	.transform((val) => val === "true")
   	.optional()
     .default(DEFAULT_SIMULATE_CLUSTER),
 });
@@ -164,9 +163,7 @@ export function getConfig(): ExtendedProxyConfig {
 		configSource = cliArgs;
 	} else {
 		console.log("Using configuration from environment variables.");
-		console.log('process.env', process.env.SIMULATE_CLUSTER);
 		const parsedEnv = envSchema.parse(process.env);
-		console.log('parsedEnv', parsedEnv);
 		configSource = {
 			listenPort: parsedEnv.LISTEN_PORT,
 			listenHost: parsedEnv.LISTEN_HOST,

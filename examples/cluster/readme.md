@@ -2,17 +2,26 @@
 
 Short example demonstrating how to use the Proxy in cluster simulating mode in front of a standalone Redis.
 
-First, start a standalone Redis server with the client libs test image:
-```
-docker run -p 3000:3000 redislabs/client-libs-test:8.2
+## Step 1: Setup redis + proxy
+
+- Option 1: Using Docker Compose
+
+Running the provided `docker-compose.yml` file:
+
+```bash
+docker-compose up
 ```
 
-Run the proxy in cluster mode:
+- Option 2: Using external Redis server
+
+1. Start a standalone Redis server on port 3000
+
+2. Run the proxy in cluster mode:
 ```bash
 docker run \
   -p 6379:6379 -p 6380:6380 -p 6381:6381 -p 4000:4000 \
-  -e TARGET_HOST=127.0.0.1 \
-  -e TARGET_PORT=3000 \
+  -e TARGET_HOST=<redis-host> \
+  -e TARGET_PORT=<redis-port> \
   -e TIMEOUT=0 \
   -e API_PORT=4000 \
   -e SIMULATE_CLUSTER=yes \
@@ -21,6 +30,8 @@ docker run \
 ```
 This will start a Proxy instance (ports 6379, 6380 and 6381 for proxying and 4000 for the REST API).
 The proxy will simulate a cluster with 3 nodes running on ports 6379, 6479 and 6579 by intercepting the `cluster slots` command and returning a fake response.
+
+## Step 2: Check if `cluster slots` reports correctly
 
 Open a separate terminal
 
@@ -47,6 +58,8 @@ Response should be similar to the following, where the ports are the proxy liste
       3) "proxy-id-6381"
 ```
 
+### Step 3: Test push
+
 ```bash
 redis-cli subscribe foo
 ```
@@ -55,7 +68,7 @@ Open another terminal
 
 Push a message to all connected clients
 ```bash
-curl -X POST "http://localhost:4000/send-to-all-clients?encoding=raw" --data-binary ">3\r\n$7\r\nmessage\r\n$3\r\nfoo\r\n$4\r\neeee\r\n"
+curl -X POST "http://localhost:4000/send-to-all-clients?encoding=raw" -H 'Content-Type: application/json' -d '{"data": ">3\r\n$7\r\nmessage\r\n$3\r\nfoo\r\n$4\r\neeee\r\n"}'
 ```
 
 You should see the following message in the `redis-cli subscribe` terminal:
@@ -65,7 +78,9 @@ You should see the following message in the `redis-cli subscribe` terminal:
 3) "eeee"
 ```
 
-Change cluster topology. This is done by adding an interceptor that will catch the `cluster slots` command and return a different response. In this case we swapped the ports of node 2 and node 3.
+### Step 4: Test topology change
+
+Changing cluster topology is done by adding an interceptor that will catch the `cluster slots` command and return a different response. In this case we swapped the ports of node 2 and node 3.
 ```
 curl -X POST "http://localhost:4000/interceptors" -H 'Content-Type: application/json' -d '{"name":"test", "match":"*2\r\n$7\r\ncluster\r\n$5\r\nslots\r\n", "response":"*3\r\n*3\r\n:0\r\n:5460\r\n*3\r\n$9\r\n127.0.0.1\r\n:6381\r\n$13\r\nproxy-id-6379\r\n*3\r\n:5461\r\n:10921\r\n*3\r\n$9\r\n127.0.0.1\r\n:6380\r\n$13\r\nproxy-id-6380\r\n*3\r\n:10922\r\n:16383\r\n*3\r\n$9\r\n127.0.0.1\r\n:6379\r\n$13\r\nproxy-id-6381\r\n", "encoding":"raw"}'
 ```

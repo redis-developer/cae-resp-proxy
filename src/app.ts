@@ -71,10 +71,7 @@ export function createApp(testConfig?: ExtendedProxyConfig) {
 
 	const proxyStore = new ProxyStore();
 
-	// Handle both single port and array of ports
-	const listenPorts = Array.isArray(config.listenPort) ? config.listenPort : [config.listenPort];
-
-	for (const port of listenPorts) {
+	for (const port of config.listenPort) {
 		const proxyConfig: ProxyConfig = { ...config, listenPort: port };
 		const nodeId = makeId(config.targetHost, config.targetPort, port);
 		proxyStore.add(nodeId, startNewProxy(proxyConfig));
