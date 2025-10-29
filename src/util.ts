@@ -9,7 +9,7 @@ export type ExtendedProxyConfig = Omit<ProxyConfig, "listenPort"> & {
 };
 
 export const dataSchema = z.object({
-  data: z.string().min(1, "Data is required"),
+	data: z.string().min(1, "Data is required"),
 });
 
 export const encodingSchema = z.object({
@@ -57,11 +57,13 @@ export const DEFAULT_ENABLE_LOGGING = false;
 export const DEFAULT_API_PORT = 3000;
 export const DEFAULT_SIMULATE_CLUSTER = false;
 
-const listenPortSchema =  z.preprocess(value => {
-  if (Array.isArray(value)) return value;
-  if (typeof value === 'string') return value.split(',');
- 	return [value]
-}, z.array(z.coerce.number()).min(1)).default(DEFAULT_LISTEN_PORT)
+const listenPortSchema = z
+	.preprocess((value) => {
+		if (Array.isArray(value)) return value;
+		if (typeof value === "string") return value.split(",");
+		return [value];
+	}, z.array(z.coerce.number()).min(1))
+	.default(DEFAULT_LISTEN_PORT);
 
 export const proxyConfigSchema = z.object({
 	listenPort: listenPortSchema,
@@ -85,11 +87,11 @@ const envSchema = z.object({
 		.transform((val) => val === "true")
 		.optional(),
 	API_PORT: z.coerce.number().optional().default(DEFAULT_API_PORT),
-	SIMULATE_CLUSTER:  z
-	  .enum(["true", "false"])
-  	.transform((val) => val === "true")
-  	.optional()
-    .default(DEFAULT_SIMULATE_CLUSTER),
+	SIMULATE_CLUSTER: z
+		.enum(["true", "false"])
+		.transform((val) => val === "true")
+		.optional()
+		.default(DEFAULT_SIMULATE_CLUSTER),
 });
 
 export function parseCliArgs(argv: string[]): Record<string, string | boolean | number | number[]> {
@@ -172,7 +174,7 @@ export function getConfig(): ExtendedProxyConfig {
 			timeout: parsedEnv.TIMEOUT,
 			enableLogging: parsedEnv.ENABLE_LOGGING,
 			apiPort: parsedEnv.API_PORT,
-			simulateCluster: parsedEnv.SIMULATE_CLUSTER
+			simulateCluster: parsedEnv.SIMULATE_CLUSTER,
 		};
 	}
 
