@@ -20,11 +20,12 @@ docker-compose up
 ```bash
 docker run \
   -p 6379:6379 -p 6380:6380 -p 6381:6381 -p 4000:4000 \
+  -e LISTEN_PORT=6379,6380,6381 \
   -e TARGET_HOST=<redis-host> \
   -e TARGET_PORT=<redis-port> \
   -e TIMEOUT=0 \
   -e API_PORT=4000 \
-  -e SIMULATE_CLUSTER=yes \
+  -e SIMULATE_CLUSTER=true \
   redislabs/client-resp-proxy
 
 ```
