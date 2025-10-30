@@ -1,21 +1,26 @@
 import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
 import { logger } from "hono/logger";
-import type {
-	Interceptor,
-	ProxyConfig,
-	ProxyStats,
-	SendResult,
-} from "redis-monorepo/packages/test-utils/lib/redis-proxy.ts";
-import { RedisProxy } from "redis-monorepo/packages/test-utils/lib/redis-proxy.ts";
+import {
+	type InterceptorDescription,
+	type InterceptorState,
+	type Next,
+	type ProxyConfig,
+	type ProxyStats,
+	RedisProxy,
+	type SendResult,
+} from "redis-monorepo/packages/test-utils/lib/proxy/redis-proxy.ts";
 import ProxyStore, { makeId } from "./proxy-store.ts";
 import {
 	connectionIdsQuerySchema,
+	type ExtendedProxyConfig,
 	encodingSchema,
 	getConfig,
+	interceptorSchema,
 	paramSchema,
 	parseBuffer,
 	proxyConfigSchema,
+	scenarioSchema,
 } from "./util.ts";
 
 const startNewProxy = (config: ProxyConfig) => {
@@ -24,82 +29,68 @@ const startNewProxy = (config: ProxyConfig) => {
 	return proxy;
 };
 
-interface Mapping {
-	from: {
-		host: string;
-		port: number;
-	};
-	to: {
-		host: string;
-		port: number;
-	};
-}
+const setClusterSimulateInterceptor = (proxyStore: ProxyStore) => {
+	const interceptor: InterceptorDescription = {
+		name: `cluster-simulation-interceptor`,
+		fn: async (data: Buffer, next: Next, state: InterceptorState) => {
+			state.invokeCount++;
 
-const addressMapping = new Map<string, Mapping>();
-
-const setTransformers = (addressMapping: Map<string, Mapping>, proxyStore: ProxyStore) => {
-	const interceptors = [];
-	for (const mapping of addressMapping.values()) {
-		interceptors.push(async (data: Buffer, next: Interceptor) => {
-			const response = await next(data);
-			// for example $9\r\n127.0.0.1\r\n:3000
-			const from = `$${mapping.from.host.length}\r\n${mapping.from.host}\r\n:${mapping.from.port}`;
-			if (response.includes(from)) {
-				const to = `$${mapping.to.host.length}\r\n${mapping.to.host}\r\n:${mapping.to.port}`;
-				return Buffer.from(response.toString().replaceAll(from, to));
+			if (data.toString().toLowerCase() !== "*2\r\n$7\r\ncluster\r\n$5\r\nslots\r\n") {
+				return next(data);
 			}
-			return response;
-		});
-	}
+
+			state.matchCount++;
+
+			const proxies = proxyStore.proxies;
+			const slotLenght = Math.floor(16384 / proxies.length);
+
+			let current = -1;
+			const mapping = proxyStore.proxies.map((proxy, i) => {
+				const from = current + 1;
+				const to = i === proxies.length - 1 ? 16383 : current + slotLenght;
+				current = to;
+				const id = `proxy-id-${proxy.config.listenPort}`;
+				return `*3\r\n:${from}\r\n:${to}\r\n*3\r\n$${proxy.config.listenHost.length}\r\n${proxy.config.listenHost}\r\n:${proxy.config.listenPort}\r\n$${id.length}\r\n${id}\r\n`;
+			});
+
+			const response = `*${proxies.length}\r\n${mapping.join("")}`;
+			return Buffer.from(response);
+		},
+	};
+
 	for (const proxy of proxyStore.proxies) {
-		proxy.setInterceptors(interceptors);
+		proxy.setGlobalInterceptors([interceptor]);
 	}
 };
 
-export function createApp(testConfig?: ProxyConfig & { readonly apiPort?: number }) {
+export function createApp(testConfig?: ExtendedProxyConfig) {
 	const config = testConfig || getConfig();
 	const app = new Hono();
 	app.use(logger());
 
 	const proxyStore = new ProxyStore();
-	const nodeId = makeId(config.targetHost, config.targetPort);
-	proxyStore.add(nodeId, startNewProxy(config));
-	addressMapping.set(nodeId, {
-		from: {
-			host: config.targetHost,
-			port: config.targetPort,
-		},
-		to: {
-			host: config.listenHost ?? "127.0.0.1",
-			port: config.listenPort,
-		},
-	});
-	setTransformers(addressMapping, proxyStore);
+
+	for (const port of config.listenPort) {
+		const proxyConfig: ProxyConfig = { ...config, listenPort: port };
+		const nodeId = makeId(config.targetHost, config.targetPort, port);
+		proxyStore.add(nodeId, startNewProxy(proxyConfig));
+	}
+
+	config.simulateCluster && setClusterSimulateInterceptor(proxyStore);
 
 	app.post("/nodes", zValidator("json", proxyConfigSchema), async (c) => {
 		const data = await c.req.json();
 		const cfg: ProxyConfig = { ...config, ...data };
-		const nodeId = makeId(cfg.targetHost, cfg.targetPort);
+		const nodeId = makeId(cfg.targetHost, cfg.targetPort, cfg.listenPort);
 		proxyStore.add(nodeId, startNewProxy(cfg));
-		addressMapping.set(nodeId, {
-			from: {
-				host: cfg.targetHost,
-				port: cfg.targetPort,
-			},
-			to: {
-				host: cfg.listenHost ?? "127.0.0.1",
-				port: cfg.listenPort,
-			},
-		});
-		setTransformers(addressMapping, proxyStore);
+		config.simulateCluster && setClusterSimulateInterceptor(proxyStore);
 		return c.json({ success: true, cfg });
 	});
 
 	app.delete("/nodes/:id", async (c) => {
 		const nodeId = c.req.param("id");
 		const success = await proxyStore.delete(nodeId);
-		addressMapping.delete(nodeId);
-		setTransformers(addressMapping, proxyStore);
+		config.simulateCluster && setClusterSimulateInterceptor(proxyStore);
 		return c.json({ success });
 	});
 
@@ -189,5 +180,57 @@ export function createApp(testConfig?: ProxyConfig & { readonly apiPort?: number
 		return c.json({ success, connectionId });
 	});
 
-	return { app, proxy: proxyStore.proxies[0], config };
+	app.post("/scenarios", zValidator("json", scenarioSchema), async (c) => {
+		const { responses, encoding } = c.req.valid("json");
+
+		const responsesBuffers = responses.map((response) => parseBuffer(response, encoding));
+		let currentIndex = 0;
+
+		const scenarioInterceptor: InterceptorDescription = {
+			name: "scenario-interceptor",
+			fn: async (data: Buffer, next: Next, state: InterceptorState): Promise<Buffer> => {
+				state.invokeCount++;
+				if (currentIndex < responsesBuffers.length) {
+					state.matchCount++;
+					const response = responsesBuffers[currentIndex] as Buffer;
+					currentIndex++;
+					return response;
+				}
+				return await next(data);
+			},
+		};
+
+		for (const proxy of proxyStore.proxies) {
+			proxy.addGlobalInterceptor(scenarioInterceptor);
+		}
+
+		return c.json({ success: true, totalResponses: responses.length });
+	});
+
+	app.post("/interceptors", zValidator("json", interceptorSchema), async (c) => {
+		const { name, match, response, encoding } = c.req.valid("json");
+
+		const responseBuffer = parseBuffer(response, encoding);
+		const matchBuffer = parseBuffer(match, encoding);
+
+		const interceptor: InterceptorDescription = {
+			name,
+			fn: async (data: Buffer, next: Next, state: InterceptorState): Promise<Buffer> => {
+				state.invokeCount++;
+				if (data.toString().toLowerCase() === matchBuffer.toString().toLowerCase()) {
+					state.matchCount++;
+					return responseBuffer;
+				}
+				return next(data);
+			},
+		};
+
+		for (const proxy of proxyStore.proxies) {
+			proxy.addGlobalInterceptor(interceptor);
+		}
+
+		return c.json({ success: true, name });
+	});
+
+	return { app, proxy: proxyStore.proxies[0] as RedisProxy, config };
 }

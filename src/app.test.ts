@@ -5,8 +5,9 @@ import { createClient } from "redis";
 import {
 	getFreePortNumber,
 	type RedisProxy,
-} from "redis-monorepo/packages/test-utils/lib/redis-proxy.ts";
+} from "redis-monorepo/packages/test-utils/lib/proxy/redis-proxy.ts";
 import { createApp } from "./app";
+import createMockRedisServer from "./mock-server";
 import { makeId } from "./proxy-store";
 
 const TARGET_HOST = "127.0.0.1";
@@ -16,78 +17,17 @@ describe("Redis Proxy API", () => {
 	let proxy: RedisProxy;
 	let mockRedisServer: any;
 	let targetPort: number;
+	let listenPort: number;
 
 	beforeAll(async () => {
 		const freePort = await getFreePortNumber();
+		listenPort = freePort;
 		targetPort = await getFreePortNumber();
 
-		mockRedisServer = Bun.listen({
-			hostname: "127.0.0.1",
-			port: targetPort,
-			socket: {
-				data(socket, data) {
-					const command = data.toString();
-					console.log("Mock Redis received:", command.replace(/\r\n/g, "\\r\\n"));
-
-					// Count how many Redis commands are in this data packet
-					// Each command starts with * followed by number of arguments
-					const commandCount = (command.match(/\*\d+\r\n/g) || []).length;
-					console.log("Command count:", commandCount);
-
-					let responses = "";
-
-					if (command.includes("HELLO")) {
-						responses +=
-							"*7\r\n$6\r\nserver\r\n$5\r\nredis\r\n$7\r\nversion\r\n$5\r\n7.2.0\r\n$5\r\nproto\r\n:3\r\n$2\r\nid\r\n:1\r\n";
-					}
-
-					if (command.includes("CLIENT")) {
-						const clientCommands = (command.match(/\*4\r\n\$6\r\nCLIENT\r\n/g) || []).length;
-						for (let i = 0; i < clientCommands; i++) {
-							responses += "+OK\r\n";
-						}
-					}
-
-					if (command.includes("AUTH") && !command.includes("CLIENT")) {
-						responses += "+OK\r\n";
-					}
-					if (command.includes("PING") && !command.includes("CLIENT")) {
-						responses += "+PONG\r\n";
-					}
-					if (command.includes("FOO")) {
-						responses += "+BAR\r\n";
-					}
-					if (command.includes("SELECT") && !command.includes("CLIENT")) {
-						responses += "+OK\r\n";
-					}
-					if (command.includes("INFO") && !command.includes("CLIENT")) {
-						responses += "$23\r\n# Server\r\nredis_version:7.2.0\r\n";
-					}
-
-					// If no specific responses were generated, send OK for each command
-					if (!responses) {
-						for (let i = 0; i < commandCount; i++) {
-							responses += "+OK\r\n";
-						}
-					}
-
-					console.log("Sending responses:", responses.replace(/\r\n/g, "\\r\\n"));
-					socket.write(responses);
-				},
-				open() {
-					console.log("Mock Redis TCP connection opened");
-				},
-				close() {
-					console.log("Mock Redis TCP connection closed");
-				},
-				error(error) {
-					console.error("Mock Redis TCP error:", error);
-				},
-			},
-		});
+		mockRedisServer = createMockRedisServer(targetPort);
 
 		const testConfig = {
-			listenPort: freePort,
+			listenPort: [freePort],
 			listenHost: "127.0.0.1",
 			targetHost: TARGET_HOST,
 			targetPort: targetPort,
@@ -117,7 +57,7 @@ describe("Redis Proxy API", () => {
 		const res = await app.request("/stats");
 		expect(res.status).toBe(200);
 
-		const stats = (await res.json())[makeId(TARGET_HOST, targetPort)];
+		const stats = (await res.json())[makeId(TARGET_HOST, targetPort, listenPort)];
 		expect(stats).toHaveProperty("activeConnections");
 		expect(stats).toHaveProperty("totalConnections");
 		expect(stats).toHaveProperty("connections");
@@ -129,7 +69,7 @@ describe("Redis Proxy API", () => {
 		const res = await app.request("/connections");
 		expect(res.status).toBe(200);
 
-		const result = (await res.json())[makeId(TARGET_HOST, targetPort)];
+		const result = (await res.json())[makeId(TARGET_HOST, targetPort, listenPort)];
 		expect(result).toBeArray();
 		expect(result.length).toBe(0);
 	});
@@ -139,7 +79,7 @@ describe("Redis Proxy API", () => {
 
 		const res = await app.request("/send-to-client/non-existent-connection?encoding=base64", {
 			method: "POST",
-			body: testData,
+			testData,
 		});
 
 		expect(res.status).toBe(200);
@@ -154,7 +94,7 @@ describe("Redis Proxy API", () => {
 
 		const res = await app.request("/send-to-clients", {
 			method: "POST",
-			body: testData,
+			testData,
 		});
 
 		expect(res.status).toBe(400); // Should fail validation due to missing connectionIds
@@ -165,7 +105,10 @@ describe("Redis Proxy API", () => {
 
 		const res = await app.request("/send-to-clients?connectionIds=conn1,conn2&encoding=base64", {
 			method: "POST",
-			body: testData,
+			headers: {
+				"Content-Type": "application/json",
+			},
+			testData,
 		});
 
 		expect(res.status).toBe(200);
@@ -179,7 +122,10 @@ describe("Redis Proxy API", () => {
 
 		const res = await app.request("/send-to-all-clients?encoding=base64", {
 			method: "POST",
-			body: testData,
+			headers: {
+				"Content-Type": "application/json",
+			},
+			testData,
 		});
 
 		expect(res.status).toBe(200);
@@ -220,14 +166,16 @@ describe("Redis Proxy API", () => {
 
 					const statsRes = await app.request("/stats");
 					expect(statsRes.status).toBe(200);
-					const stats = (await statsRes.json())[makeId(TARGET_HOST, targetPort)];
+					const stats = (await statsRes.json())[makeId(TARGET_HOST, targetPort, listenPort)];
 					expect(stats.activeConnections).toBe(1);
 					expect(stats.totalConnections).toBeGreaterThanOrEqual(1);
 					expect(stats.connections.length).toBe(1);
 
 					const connectionsRes = await app.request("/connections");
 					expect(connectionsRes.status).toBe(200);
-					const connectionsResult = (await connectionsRes.json())[makeId(TARGET_HOST, targetPort)];
+					const connectionsResult = (await connectionsRes.json())[
+						makeId(TARGET_HOST, targetPort, listenPort)
+					];
 					expect(connectionsResult.length).toBe(1);
 					const connectionId = connectionsResult[0];
 					expect(typeof connectionId).toBe("string");
@@ -258,7 +206,9 @@ describe("Redis Proxy API", () => {
 					await new Promise((resolve) => setTimeout(resolve, 100));
 
 					const finalStatsRes = await app.request("/stats");
-					const finalStats = (await finalStatsRes.json())[makeId(TARGET_HOST, targetPort)];
+					const finalStats = (await finalStatsRes.json())[
+						makeId(TARGET_HOST, targetPort, listenPort)
+					];
 					expect(finalStats.activeConnections).toBe(0);
 
 					resolve();
@@ -292,13 +242,15 @@ describe("Redis Proxy API", () => {
 		await new Promise((resolve) => setTimeout(resolve, 100));
 
 		const statsRes = await app.request("/stats");
-		const stats = (await statsRes.json())[makeId(TARGET_HOST, targetPort)];
+		const stats = (await statsRes.json())[makeId(TARGET_HOST, targetPort, listenPort)];
 		expect(stats.activeConnections).toBe(1);
 		expect(stats.totalConnections).toBeGreaterThanOrEqual(1);
 		expect(stats.connections.length).toBe(1);
 
 		const connectionsRes = await app.request("/connections");
-		const connectionsResult = (await connectionsRes.json())[makeId(TARGET_HOST, targetPort)];
+		const connectionsResult = (await connectionsRes.json())[
+			makeId(TARGET_HOST, targetPort, listenPort)
+		];
 		expect(connectionsResult.length).toBe(1);
 		const connectionId = connectionsResult[0];
 
@@ -308,7 +260,7 @@ describe("Redis Proxy API", () => {
 		const pingCommand = Buffer.from("*1\r\n$4\r\nPING\r\n").toString("base64");
 		const sendRes = await app.request(`/send-to-client/${connectionId}?encoding=base64`, {
 			method: "POST",
-			body: pingCommand,
+			pingCommand,
 		});
 
 		expect(sendRes.status).toBe(200);
@@ -322,7 +274,7 @@ describe("Redis Proxy API", () => {
 		await new Promise((resolve) => setTimeout(resolve, 100));
 
 		const finalStatsRes = await app.request("/stats");
-		const finalStats = (await finalStatsRes.json())[makeId(TARGET_HOST, targetPort)];
+		const finalStats = (await finalStatsRes.json())[makeId(TARGET_HOST, targetPort, listenPort)];
 		expect(finalStats.activeConnections).toBe(0);
 	});
 });
