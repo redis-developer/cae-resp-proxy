@@ -50,7 +50,7 @@ const response = await fetch('http://localhost:3000/send-to-all-clients?encoding
 });
 
 const result = await response.json();
-console.log(result.success ? 'Injected' : 'Failed');
+console.log(result.results.length > 0 ? 'Injected' : 'Failed');
 ```
 
 **Go Example:**
@@ -69,7 +69,7 @@ func main() {
     defer resp.Body.Close()
     
     body, _ := io.ReadAll(resp.Body)
-    if strings.Contains(string(body), `"success":true`) {
+    if strings.Contains(string(body), `"results"`) {
         println("Injected")
     }
 }
@@ -91,7 +91,7 @@ public class RespProxyClient {
 
         var response = client.send(request, HttpResponse.BodyHandlers.ofString());
 
-        if (response.body().contains("\"success\":true")) {
+        if (response.body().contains("\"results\"")) {
             System.out.println("Injected");
         }
     }
@@ -108,7 +108,7 @@ req = urllib.request.Request("http://localhost:3000/send-to-all-clients?encoding
 
 with urllib.request.urlopen(req) as response:
     result = json.loads(response.read())
-    print("Injected" if result["success"] else "Failed")
+    print("Injected" if len(result["results"]) > 0 else "Failed")
 ```
 
 Key Endpoints: `POST /send-to-client/{id}`, `POST /send-to-all-clients`, `GET /connections`, `GET /stats`
@@ -315,6 +315,109 @@ Forcefully close a specific client connection.
 {
   "success": true,
   "connectionId": "conn_123"
+}
+```
+
+#### Add Interceptor
+```http
+POST /interceptors
+```
+Add a custom interceptor to match commands and return custom responses.
+
+**Example:**
+```bash
+curl -X POST "http://localhost:3000/interceptors" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"ping-interceptor","match":"*1\r\n$4\r\nPING\r\n","response":"+CUSTOM PONG\r\n","encoding":"raw"}'
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "name": "ping-interceptor"
+}
+```
+
+#### Create Scenario
+```http
+POST /scenarios
+```
+Set up automated response sequence for testing.
+
+**Example:**
+```bash
+curl -X POST "http://localhost:3000/scenarios" \
+  -H "Content-Type: application/json" \
+  -d '{"responses":["+OK\r\n",":42\r\n"],"encoding":"raw"}'
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "totalResponses": 2
+}
+```
+
+#### Get Nodes
+```http
+GET /nodes
+```
+List all proxy node IDs.
+
+**Example:**
+```bash
+curl http://localhost:3000/nodes
+```
+
+**Response:**
+```json
+{
+  "ids": ["localhost:6379:6379", "localhost:6379:6380"]
+}
+```
+
+#### Add Node
+```http
+POST /nodes
+```
+Add a new proxy node dynamically.
+
+**Example:**
+```bash
+curl -X POST "http://localhost:3000/nodes" \
+  -H "Content-Type: application/json" \
+  -d '{"listenPort":6380,"targetHost":"localhost","targetPort":6379}'
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "cfg": {
+    "listenPort": 6380,
+    "targetHost": "localhost",
+    "targetPort": 6379
+  }
+}
+```
+
+#### Delete Node
+```http
+DELETE /nodes/{nodeId}
+```
+Remove a proxy node.
+
+**Example:**
+```bash
+curl -X DELETE "http://localhost:3000/nodes/localhost:6379:6380"
+```
+
+**Response:**
+```json
+{
+  "success": true
 }
 ```
 
