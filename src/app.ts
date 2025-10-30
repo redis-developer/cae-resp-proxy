@@ -148,15 +148,14 @@ export function createApp(testConfig?: ExtendedProxyConfig) {
 		const { connectionIds, encoding } = c.req.valid("query");
 		const data = await c.req.text();
 
-			const buffer = parseBuffer(data, encoding);
+		const buffer = parseBuffer(data, encoding);
 
-			const results: SendResult[] = [];
-			for (const [proxy, matchingConIds] of proxyStore.getProxiesByConnectionIds(connectionIds)) {
-				results.push(...proxy.sendToClients(matchingConIds, buffer));
-			}
-			return c.json({ results });
-		},
-	);
+		const results: SendResult[] = [];
+		for (const [proxy, matchingConIds] of proxyStore.getProxiesByConnectionIds(connectionIds)) {
+			results.push(...proxy.sendToClients(matchingConIds, buffer));
+		}
+		return c.json({ results });
+	});
 
 	app.post("/send-to-all-clients", zValidator("query", encodingSchema), async (c) => {
 		const { encoding } = c.req.valid("query");
