@@ -1,6 +1,6 @@
 {
   "name": "resp-proxy",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "description": "A Redis RESP protocol proxy server",
   "author": "Borislav Ivanov <borislav.ivanov@redis.com> (Redis Inc)",
   "license": "MIT",
