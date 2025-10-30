@@ -13,7 +13,6 @@ import {
 import ProxyStore, { makeId } from "./proxy-store.ts";
 import {
 	connectionIdsQuerySchema,
-	dataSchema,
 	type ExtendedProxyConfig,
 	encodingSchema,
 	getConfig,
@@ -125,11 +124,10 @@ export function createApp(testConfig?: ExtendedProxyConfig) {
 		"/send-to-client/:connectionId",
 		zValidator("param", paramSchema),
 		zValidator("query", encodingSchema),
-		zValidator("json", dataSchema),
 		async (c) => {
 			const { connectionId } = c.req.valid("param");
 			const { encoding } = c.req.valid("query");
-			const { data } = c.req.valid("json");
+			const data = await c.req.text();
 
 			const buffer = parseBuffer(data, encoding);
 
@@ -146,13 +144,9 @@ export function createApp(testConfig?: ExtendedProxyConfig) {
 		},
 	);
 
-	app.post(
-		"/send-to-clients",
-		zValidator("query", connectionIdsQuerySchema),
-		zValidator("json", dataSchema),
-		async (c) => {
-			const { connectionIds, encoding } = c.req.valid("query");
-			const { data } = c.req.valid("json");
+	app.post("/send-to-clients", zValidator("query", connectionIdsQuerySchema), async (c) => {
+		const { connectionIds, encoding } = c.req.valid("query");
+		const data = await c.req.text();
 
 			const buffer = parseBuffer(data, encoding);
 
@@ -164,21 +158,16 @@ export function createApp(testConfig?: ExtendedProxyConfig) {
 		},
 	);
 
-	app.post(
-		"/send-to-all-clients",
-		zValidator("query", encodingSchema),
-		zValidator("json", dataSchema),
-		async (c) => {
-			const { encoding } = c.req.valid("query");
-			const { data } = c.req.valid("json");
-			const buffer = parseBuffer(data, encoding);
-			const results: SendResult[] = [];
-			for (const proxy of proxyStore.proxies) {
-				results.push(...proxy.sendToAllClients(buffer));
-			}
-			return c.json({ results });
-		},
-	);
+	app.post("/send-to-all-clients", zValidator("query", encodingSchema), async (c) => {
+		const { encoding } = c.req.valid("query");
+		const data = await c.req.text();
+		const buffer = parseBuffer(data, encoding);
+		const results: SendResult[] = [];
+		for (const proxy of proxyStore.proxies) {
+			results.push(...proxy.sendToAllClients(buffer));
+		}
+		return c.json({ results });
+	});
 
 	app.delete("/connections/:id", (c) => {
 		const connectionId = c.req.param("id");

@@ -68,7 +68,9 @@ Open another terminal
 
 Push a message to all connected clients
 ```bash
-curl -X POST "http://localhost:4000/send-to-all-clients?encoding=raw" -H 'Content-Type: application/json' -d '{"data": ">3\r\n$7\r\nmessage\r\n$3\r\nfoo\r\n$4\r\neeee\r\n"}'
+echo '>3\r\n$7\r\nmessage\r\n$3\r\nfoo\r\n$4\r\neeee\r' | base64
+# PjMNCiQ3DQptZXNzYWdlDQokMw0KZm9vDQokNA0KZWVlZQ0K
+curl -X POST "http://localhost:4000/send-to-all-clients?encoding=base64" -d "PjMNCiQ3DQptZXNzYWdlDQokMw0KZm9vDQokNA0KZWVlZQ0K"
 ```
 
 You should see the following message in the `redis-cli subscribe` terminal:
