@@ -25,7 +25,7 @@ docker run \
   -e TARGET_PORT=<redis-port> \
   -e TIMEOUT=0 \
   -e API_PORT=4000 \
-  -e SIMULATE_CLUSTER=true \
+  -e DEFAULT_INTERCEPTORS=cluster, hitless, logger \
   redislabs/client-resp-proxy
 
 ```
