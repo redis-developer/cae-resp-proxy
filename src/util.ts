@@ -5,7 +5,7 @@ import { z } from "zod";
 export type ExtendedProxyConfig = Omit<ProxyConfig, "listenPort"> & {
 	listenPort: number[];
 	readonly apiPort?: number;
-	simulateCluster?: boolean;
+	defaultInterceptors?: string;
 };
 
 export const encodingSchema = z.object({
@@ -51,7 +51,6 @@ export const DEFAULT_LISTEN_PORT = [6379];
 export const DEFAULT_LISTEN_HOST = "127.0.0.1";
 export const DEFAULT_ENABLE_LOGGING = false;
 export const DEFAULT_API_PORT = 3000;
-export const DEFAULT_SIMULATE_CLUSTER = false;
 
 const listenPortSchema = z
 	.preprocess((value) => {
@@ -69,7 +68,7 @@ export const proxyConfigSchema = z.object({
 	timeout: z.coerce.number().optional(),
 	enableLogging: z.boolean().optional().default(DEFAULT_ENABLE_LOGGING),
 	apiPort: z.number().optional().default(DEFAULT_API_PORT),
-	simulateCluster: z.boolean().optional().default(DEFAULT_SIMULATE_CLUSTER),
+	defaultInterceptors: z.string().optional(),
 });
 
 const envSchema = z.object({
@@ -83,11 +82,7 @@ const envSchema = z.object({
 		.transform((val) => val === "true")
 		.optional(),
 	API_PORT: z.coerce.number().optional().default(DEFAULT_API_PORT),
-	SIMULATE_CLUSTER: z
-		.enum(["true", "false"])
-		.transform((val) => val === "true")
-		.optional()
-		.default(DEFAULT_SIMULATE_CLUSTER),
+	DEFAULT_INTERCEPTORS: z.string().optional(),
 });
 
 export function parseCliArgs(argv: string[]): Record<string, string | boolean | number | number[]> {
@@ -138,15 +133,15 @@ Optional options:
   --timeout <number>        Connection timeout in milliseconds
   --enableLogging           Enable verbose logging
   --apiPort                 Port to start the http on (default: 3000 )
-  --simulateCluster         Simulate Redis Cluster behavior like \`cluster slots\` (default: false)
+  --defaultInterceptors     Comma-separated list of default interceptors to load ( like cluster, hitless, etc. )
 
 Or configure using environment variables:
   LISTEN_PORT, TARGET_HOST, TARGET_PORT (required)
-  LISTEN_HOST, TIMEOUT, ENABLE_LOGGING, API_PORT, SIMULATE_CLUSTER (optional)
+  LISTEN_HOST, TIMEOUT, ENABLE_LOGGING, API_PORT, DEFAULT_INTERCEPTORS (optional)
 
 Examples:
   bun run proxy --listenPort=6379 --targetHost=localhost --targetPort=6380
-  bun run proxy --listenPort=6379,6380,6381 --simulateCluster --targetHost=localhost --targetPort=6382
+  bun run proxy --listenPort=6379,6380,6381 --defaultInterceptors=cluster --targetHost=localhost --targetPort=6382
   docker run -p 3000:3000 -p 6379:6379  -e LISTEN_PORT=6379 -e TARGET_HOST=host.docker.internal -e TARGET_PORT=6380 your-image-name
   `);
 }
@@ -170,7 +165,7 @@ export function getConfig(): ExtendedProxyConfig {
 			timeout: parsedEnv.TIMEOUT,
 			enableLogging: parsedEnv.ENABLE_LOGGING,
 			apiPort: parsedEnv.API_PORT,
-			simulateCluster: parsedEnv.SIMULATE_CLUSTER,
+			defaultInterceptors: parsedEnv.DEFAULT_INTERCEPTORS,
 		};
 	}
 

@@ -26,7 +26,7 @@ services:
       TARGET_PORT: "3000"
       API_PORT: "4000"
       ENABLE_LOGGING: true
-      SIMULATE_CLUSTER: true
+      DEFAULT_INTERCEPTORS: 'cluster, hitless, logger'
     ports:
       - "6379:6379"
       - "6380:6380"

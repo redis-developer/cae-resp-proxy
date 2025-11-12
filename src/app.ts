@@ -10,6 +10,7 @@ import {
 	RedisProxy,
 	type SendResult,
 } from "redis-monorepo/packages/test-utils/lib/proxy/redis-proxy.ts";
+import applyDefaultInterceptors from "./default_interceptors/index.ts";
 import ProxyStore, { makeId } from "./proxy-store.ts";
 import {
 	connectionIdsQuerySchema,
@@ -29,40 +30,6 @@ const startNewProxy = (config: ProxyConfig) => {
 	return proxy;
 };
 
-const setClusterSimulateInterceptor = (proxyStore: ProxyStore) => {
-	const interceptor: InterceptorDescription = {
-		name: `cluster-simulation-interceptor`,
-		fn: async (data: Buffer, next: Next, state: InterceptorState) => {
-			state.invokeCount++;
-
-			if (data.toString().toLowerCase() !== "*2\r\n$7\r\ncluster\r\n$5\r\nslots\r\n") {
-				return next(data);
-			}
-
-			state.matchCount++;
-
-			const proxies = proxyStore.proxies;
-			const slotLenght = Math.floor(16384 / proxies.length);
-
-			let current = -1;
-			const mapping = proxyStore.proxies.map((proxy, i) => {
-				const from = current + 1;
-				const to = i === proxies.length - 1 ? 16383 : current + slotLenght;
-				current = to;
-				const id = `proxy-id-${proxy.config.listenPort}`;
-				return `*3\r\n:${from}\r\n:${to}\r\n*3\r\n$${proxy.config.listenHost.length}\r\n${proxy.config.listenHost}\r\n:${proxy.config.listenPort}\r\n$${id.length}\r\n${id}\r\n`;
-			});
-
-			const response = `*${proxies.length}\r\n${mapping.join("")}`;
-			return Buffer.from(response);
-		},
-	};
-
-	for (const proxy of proxyStore.proxies) {
-		proxy.setGlobalInterceptors([interceptor]);
-	}
-};
-
 export function createApp(testConfig?: ExtendedProxyConfig) {
 	const config = testConfig || getConfig();
 	const app = new Hono();
@@ -76,21 +43,20 @@ export function createApp(testConfig?: ExtendedProxyConfig) {
 		proxyStore.add(nodeId, startNewProxy(proxyConfig));
 	}
 
-	config.simulateCluster && setClusterSimulateInterceptor(proxyStore);
+	config.defaultInterceptors && applyDefaultInterceptors(config.defaultInterceptors, proxyStore);
 
 	app.post("/nodes", zValidator("json", proxyConfigSchema), async (c) => {
 		const data = await c.req.json();
 		const cfg: ProxyConfig = { ...config, ...data };
 		const nodeId = makeId(cfg.targetHost, cfg.targetPort, cfg.listenPort);
 		proxyStore.add(nodeId, startNewProxy(cfg));
-		config.simulateCluster && setClusterSimulateInterceptor(proxyStore);
+		config.defaultInterceptors && applyDefaultInterceptors(config.defaultInterceptors, proxyStore);
 		return c.json({ success: true, cfg });
 	});
 
 	app.delete("/nodes/:id", async (c) => {
 		const nodeId = c.req.param("id");
 		const success = await proxyStore.delete(nodeId);
-		config.simulateCluster && setClusterSimulateInterceptor(proxyStore);
 		return c.json({ success });
 	});
 
