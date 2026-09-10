@@ -10,18 +10,24 @@ import {
 	RedisProxy,
 	type SendResult,
 } from "redis-monorepo/packages/test-utils/lib/proxy/redis-proxy.ts";
+import { executeAction } from "./actions/index.ts";
+import { generateTriggersForEffect } from "./actions/triggers.ts";
 import applyDefaultInterceptors from "./default_interceptors/index.ts";
 import ProxyStore, { makeId } from "./proxy-store.ts";
 import {
+	type ActionRecord,
+	actionIdParamSchema,
+	actionRequestSchema,
 	connectionIdsQuerySchema,
 	type ExtendedProxyConfig,
 	encodingSchema,
 	getConfig,
 	interceptorSchema,
+	type ListActionTriggersResponse,
 	paramSchema,
 	parseBuffer,
 	proxyConfigSchema,
-	scenarioSchema,
+	slotMigrateEffectSchema,
 } from "./util.ts";
 
 const startNewProxy = (config: ProxyConfig) => {
@@ -44,6 +50,30 @@ export function createApp(testConfig?: ExtendedProxyConfig) {
 	}
 
 	config.defaultInterceptors && applyDefaultInterceptors(config.defaultInterceptors, proxyStore);
+
+	// Simulate the endpoints being offline: drop every client connection and
+	// stop accepting new ones until rejecting is stopped again.
+	let rejectingTraffic = false;
+
+	app.post("/reject-traffic/start", async (c) => {
+		if (!rejectingTraffic) {
+			rejectingTraffic = true;
+			for (const proxy of proxyStore.proxies) {
+				await proxy.stop();
+			}
+		}
+		return c.json({ success: true, rejecting: rejectingTraffic });
+	});
+
+	app.post("/reject-traffic/stop", async (c) => {
+		if (rejectingTraffic) {
+			rejectingTraffic = false;
+			for (const proxy of proxyStore.proxies) {
+				await proxy.start();
+			}
+		}
+		return c.json({ success: true, rejecting: rejectingTraffic });
+	});
 
 	app.post("/nodes", zValidator("json", proxyConfigSchema), async (c) => {
 		const data = await c.req.json();
@@ -146,33 +176,6 @@ export function createApp(testConfig?: ExtendedProxyConfig) {
 		return c.json({ success, connectionId });
 	});
 
-	app.post("/scenarios", zValidator("json", scenarioSchema), async (c) => {
-		const { responses, encoding } = c.req.valid("json");
-
-		const responsesBuffers = responses.map((response) => parseBuffer(response, encoding));
-		let currentIndex = 0;
-
-		const scenarioInterceptor: InterceptorDescription = {
-			name: "scenario-interceptor",
-			fn: async (data: Buffer, next: Next, state: InterceptorState): Promise<Buffer> => {
-				state.invokeCount++;
-				if (currentIndex < responsesBuffers.length) {
-					state.matchCount++;
-					const response = responsesBuffers[currentIndex] as Buffer;
-					currentIndex++;
-					return response;
-				}
-				return await next(data);
-			},
-		};
-
-		for (const proxy of proxyStore.proxies) {
-			proxy.addGlobalInterceptor(scenarioInterceptor);
-		}
-
-		return c.json({ success: true, totalResponses: responses.length });
-	});
-
 	app.post("/interceptors", zValidator("json", interceptorSchema), async (c) => {
 		const { name, match, response, encoding } = c.req.valid("json");
 
@@ -196,6 +199,87 @@ export function createApp(testConfig?: ExtendedProxyConfig) {
 		}
 
 		return c.json({ success: true, name });
+	});
+
+	// In-memory action storage
+	const actionStore = new Map<string, ActionRecord>();
+
+	// Generate unique action ID
+	const generateActionId = (): string => {
+		return `action-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+	};
+
+	// POST /action - Submit an action
+	app.post("/action", zValidator("json", actionRequestSchema), async (c) => {
+		const { type, parameters } = c.req.valid("json");
+
+		const actionId = generateActionId();
+		const actionRecord: ActionRecord = {
+			id: actionId,
+			type,
+			parameters,
+			status: "pending",
+			submittedAt: new Date(),
+			error: null,
+			output: null,
+		};
+
+		actionStore.set(actionId, actionRecord);
+
+		// Execute the action asynchronously
+		actionRecord.status = "running";
+		executeAction(type, parameters, proxyStore, config)
+			.then((result) => {
+				actionRecord.status = result.status;
+				actionRecord.output = result.output ?? "Done";
+				actionRecord.error = result.error ?? null;
+			})
+			.catch((error) => {
+				actionRecord.status = "failed";
+				actionRecord.error = error instanceof Error ? error.message : String(error);
+			});
+
+		return c.json({ action_id: actionId });
+	});
+
+	// GET /action/:action_id - Get action status
+	app.get("/action/:action_id", zValidator("param", actionIdParamSchema), (c) => {
+		const { action_id } = c.req.valid("param");
+
+		const action = actionStore.get(action_id);
+		if (!action) {
+			return c.json({ error: "Action not found" }, 404);
+		}
+
+		return c.json({
+			status: action.status,
+			error: action.error,
+			output: action.output,
+		});
+	});
+
+	// GET /action - List all submitted actions
+	app.get("/action", (c) => {
+		const actions = Array.from(actionStore.values()).map((action) => ({
+			job_id: action.id,
+			action_type: action.type,
+			status: action.status,
+			submitted_at: action.submittedAt.toISOString(),
+		}));
+		return c.json({ actions });
+	});
+
+	// GET /slot-migrate - List action triggers for an effect
+	app.get("/slot-migrate", zValidator("query", slotMigrateEffectSchema), (c) => {
+		const { effect } = c.req.valid("query");
+
+		const response: ListActionTriggersResponse = {
+			effect,
+			cluster: { index: 0, nodes: proxyStore.nodeIds.length },
+			triggers: generateTriggersForEffect(effect, proxyStore.nodeIds.length),
+		};
+
+		return c.json(response);
 	});
 
 	return { app, proxy: proxyStore.proxies[0] as RedisProxy, config };
